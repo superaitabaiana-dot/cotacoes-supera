@@ -6,6 +6,7 @@ import { CAMPOS_COMUNS, COBERTURAS, SERVICOS, avisosComparacao, compararCobertur
 import { gerarDocumento, nomeArquivo } from "./documento.js";
 import { lerPdf, mask, resumoOcultos } from "./leitor.js";
 import { LEITORES, lerPorRegras } from "./leitores/index.js";
+import { lerPorOCR } from "./ocr.js";
 import { rotulo as rotuloCampo } from "./leitores/resgate.js";
 import { lerResposta, montarPrompt } from "./prompt.js";
 import { $, $$, baixar, repor, blobParaBase64, brl, dataHora, el, fmtDate, fmtTel, hoje, norm, senhaTemporaria, uid } from "./util.js";
@@ -233,7 +234,7 @@ function etapaArquivos() {
       el("button", { type: "button", "aria-pressed": String(E.modo === m), disabled: E.arquivos.length > 0 && E.modo !== m, onclick: () => { E.modo = m; etapaArquivos(); } }, t)));
 
   const prontos = E.arquivos.filter((a) => a.estado === "pronto" || a.estado === "salvo").length;
-  const ocupados = E.arquivos.some((a) => ["fila", "lendo", "extraindo", "colar", "parcial"].includes(a.estado));
+  const ocupados = E.arquivos.some((a) => ["fila", "lendo", "ocr", "extraindo", "colar", "parcial"].includes(a.estado));
   trocar(pagina(cabecalhoCotacao(),
     el("div", { class: "linha", style: "justify-content:space-between" }, modo,
       el("p", { class: "mut", style: "font-size:13px;max-width:62ch" }, "A leitura acontece no seu navegador. Se a seguradora ainda não tiver leitor automático, o sistema prepara o texto, com CPF, e-mail, telefone e nascimento ocultos, para você ler no Claude.")),
@@ -246,13 +247,13 @@ function etapaArquivos() {
 }
 
 function linhaArquivo(a) {
-  const rot = { fila: "Na fila", lendo: "Lendo o PDF", extraindo: "Lendo com IA", pronto: "Pronto", salvo: "Já lido", erro: "Não lido", colar: "Ler no Claude", parcial: "Leitura parcial" }[a.estado];
-  const det = ["erro", "colar", "parcial"].includes(a.estado) ? a.msg
+  const rot = { fila: "Na fila", lendo: "Lendo o PDF", ocr: "Lendo imagem (OCR)", extraindo: "Lendo com IA", pronto: "Pronto", salvo: "Já lido", erro: "Não lido", colar: "Ler no Claude", parcial: "Leitura parcial" }[a.estado];
+  const det = ["erro", "colar", "parcial", "ocr"].includes(a.estado) ? a.msg
     : a.nomes?.length ? [a.nomes.join(", "), a.origem, a.ocultos && a.origem !== "leitura automática" ? `ocultados: ${a.ocultos}` : ""].filter(Boolean).join(" · ")
     : a.tamanho ? `${(a.tamanho / 1024).toFixed(0)} KB` : "";
   return el("div", { class: "arq", "data-arq": a.id },
     el("div", {}, el("div", { class: "nome" }, a.nome), el("div", { class: "det" + (a.estado === "erro" ? " erro" : "") }, det)),
-    el("span", { class: "estado" + (["fila", "lendo", "extraindo"].includes(a.estado) ? " ocupado" : ""), style: a.estado === "erro" ? "color:var(--bad)" : a.estado === "pronto" ? "color:var(--ok)" : ["colar", "parcial"].includes(a.estado) ? "color:var(--warn)" : "" }, rot),
+    el("span", { class: "estado" + (["fila", "lendo", "ocr", "extraindo"].includes(a.estado) ? " ocupado" : ""), style: a.estado === "erro" ? "color:var(--bad)" : a.estado === "pronto" ? "color:var(--ok)" : ["colar", "parcial"].includes(a.estado) ? "color:var(--warn)" : "" }, rot),
     el("div", { class: "linha" },
       a.estado === "erro" && a.file ? el("button", { class: "discreto", onclick: () => { a.estado = "fila"; processar(); } }, "Tentar de novo") : null,
       ["pronto", "erro", "salvo", "colar", "parcial"].includes(a.estado) ? el("button", { class: "discreto perigo", onclick: () => removerArquivo(a) }, "Remover") : null),
@@ -297,9 +298,17 @@ function registrarLeitura(auto) {
 }
 
 function concluirLeitura(a, dados, origem) {
-  incorporar(E.dados, { id: a.id, arquivo_nome: a.nome, extracao: dados });
+  if (a.ocr) dados.alertas = [...(dados.alertas || []), ...alertasOCR(a.ocr)];
+  incorporar(E.dados, { id: a.id, arquivo_nome: a.nome, extracao: dados, ocr: !!a.ocr });
   E.textos.set(a.id, a.textoMascarado); a.extracao = dados; a.nomes = dados.seguradoras.map((s) => s.seguradora);
   a.origem = origem; a.estado = "pronto"; a.colado = ""; E.sujo = true;
+}
+
+/** Avisos de uma leitura por OCR: confira tudo; e os valores que ficaram ilegíveis (em branco). */
+function alertasOCR(ocr) {
+  const sus = [...new Set(ocr.suspeitos || [])];
+  return ["Lido pela imagem (OCR), porque o PDF não tem texto. Confira cada valor com o PDF original antes de enviar.",
+    ...(sus.length ? [`O OCR não leu com clareza ${sus.length > 1 ? "estes valores, que ficaram" : "este valor, que ficou"} em branco: ${sus.slice(0, 12).join(" · ")}${sus.length > 12 ? " …" : ""}.`] : [])];
 }
 
 function removerArquivo(a) {
@@ -332,15 +341,22 @@ async function lerArquivo(a) {
   try {
     a.estado = "lendo"; atualizar();
     if (!window.pdfjsLib) throw new Error("O leitor de PDF não carregou. Recarregue a página.");
-    const doc = await lerPdf(await a.file.arrayBuffer());
-    if (doc.texto.replace(/---.*---/g, "").trim().length < 200) throw new Error("Este PDF não tem texto legível (parece escaneado). Peça o PDF original à seguradora.");
+    let doc = await lerPdf(await a.file.arrayBuffer());
+    const semTexto = (d) => d.texto.replace(/---.*---/g, "").trim().length < 200;
+    if (semTexto(doc)) {
+      // PDF sem texto: as letras foram gravadas como desenho (ex.: "Microsoft Print to PDF") ou é imagem. Lê por OCR, no navegador.
+      a.estado = "ocr"; a.msg = "O PDF não tem texto (as letras estão gravadas como imagem). Preparando a leitura da imagem…"; atualizar();
+      doc = await lerPorOCR(await a.file.arrayBuffer(), (p, n) => { a.msg = `O PDF não tem texto; lendo a imagem: página ${p} de ${n}…`; atualizar(); });
+      if (semTexto(doc)) throw new Error("Não foi possível ler este PDF nem pela imagem. Peça à seguradora o PDF original (baixado do portal, não impresso).");
+      a.ocr = doc.ocr;
+    }
     const m = mask(doc.texto); a.ocultos = resumoOcultos(m.n); a.textoMascarado = m.text;
     // 1º: leitor automático da seguradora (no navegador, sem custo). 2º: reserva configurada.
     const auto = lerPorRegras(doc);
     registrarLeitura(auto);
     if (E !== meu || !E.arquivos.includes(a)) return;
     const temDados = !!auto?.dados?.seguradoras?.length;
-    if (temDados && !auto.parcial) concluirLeitura(a, auto.dados, "leitura automática");
+    if (temDados && !auto.parcial) concluirLeitura(a, auto.dados, a.ocr ? "leitura da imagem (OCR)" : "leitura automática");
     else if (CONFIG.LEITURA_RESERVA === "api") {
       a.estado = "extraindo"; atualizar();
       const r = await api.extrair(m.text, a.nome);

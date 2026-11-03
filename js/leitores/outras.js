@@ -110,8 +110,10 @@ export const mapfre = {
       for (let i = iF + 1; i < doc.linhas.length; i++) {
         const t = doc.linhas[i].texto;
         if (!/^(\d+x|-)\s/.test(t)) continue;
-        const grupos = [...t.matchAll(/(\d+)x\s+(Sem|Com) Juros\s+R\$\s*([\d.,]+)\s+R\$\s*([\d.,]+)|-\s+-\s+-/g)];
-        grupos.forEach((g, k) => { if (g[1] && porForma[k]) porForma[k].push({ n: +g[1], juros: g[2] === "Com", parcela: g[3], total: g[4] }); });
+        // Valor ilegível ("R$??", vindo do OCR) ainda ocupa a trinca, para as formas seguintes não mudarem de coluna.
+        const grupos = [...t.matchAll(/(\d+)x\s+(Sem|Com) Juros\s+R\$\s*(\S+)\s+R\$\s*(\S+)|-\s+-\s+-/g)];
+        const ok = (v) => /^\d{1,3}(\.\d{3})*,\d{2}$/.test(v);
+        grupos.forEach((g, k) => { if (g[1] && porForma[k] && ok(g[3]) && ok(g[4])) porForma[k].push({ n: +g[1], juros: g[2] === "Com", parcela: g[3], total: g[4] }); });
       }
       formas.forEach((f, k) => o.pagamentos.push(...resumirPagamentos(f, porForma[k], premio)));
     }

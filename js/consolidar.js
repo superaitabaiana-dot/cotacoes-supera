@@ -25,7 +25,7 @@ export function novaCotacao() {
   return { fonte: "seguradoras", comum: { tipo: "" }, seguradoras: [], fontes: [], recomendada: null, nota: "", validade_calculada: false };
 }
 
-/** Acrescenta a leitura de um PDF à cotação. `fonte` = { id, arquivo_nome, extracao }. */
+/** Acrescenta a leitura de um PDF à cotação. `fonte` = { id, arquivo_nome, extracao, ocr? } (ocr: lido pela imagem). */
 export function incorporar(dados, fonte) {
   const x = fonte.extracao || {};
   const valores = {};
@@ -36,7 +36,7 @@ export function incorporar(dados, fonte) {
     valores._validade_calculada = true;
   }
   const nomes = (x.seguradoras || []).map((s) => s.seguradora).filter(Boolean);
-  dados.fontes.push({ id: fonte.id, arquivo_nome: fonte.arquivo_nome, tipo_documento: x.tipo_documento || "SEGURADORA", alertas: x.alertas || [], valores, nomes });
+  dados.fontes.push({ id: fonte.id, arquivo_nome: fonte.arquivo_nome, tipo_documento: x.tipo_documento || "SEGURADORA", alertas: x.alertas || [], valores, nomes, ...(fonte.ocr ? { ocr: true } : {}) });
   if (x.tipo_documento === "MULTICALCULO") dados.fonte = "segfy";
 
   for (const s of x.seguradoras || []) {

@@ -54,6 +54,8 @@ export function validar(dados, textos = new Map()) {
 
   for (const s of segs) {
     const o = opcaoAtual(s); const texto = textos.get(s.fonte_id) || "";
+    // Lido pela imagem: a checagem "valor localizado no PDF" compara com o próprio texto do OCR, então não protege.
+    if (dados.fontes.find((f) => f.id === s.fonte_id)?.ocr) add(s.id, "ocr", "divergente", `${s.nome}: lido pela imagem (OCR), o PDF não tem texto. Confira cada valor, parcela e cobertura com o PDF original.`);
     for (const [k, r] of OBRIG_SEG) if (!o[k]) add(s.id, k, "ausente", `${s.nome}: ${r} não encontrado.`);
     for (const [k, r] of DESEJ_SEG) if (!o[k]) add(s.id, k, "ausente", `${s.nome}: ${r} não informado.`);
     for (const k of MONETARIOS) {

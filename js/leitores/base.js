@@ -112,6 +112,26 @@ export function tokensComX(linha, re) {
   }
   return out;
 }
+/**
+ * Valor embaixo de um rótulo, em quadros "rótulos numa linha, valores na seguinte", alinhados à esquerda.
+ * Cada palavra da linha de valores vai para o último rótulo que começa à esquerda dela, então o resultado não
+ * depende de como as células foram separadas (o OCR às vezes funde "2202   49037" numa célula só).
+ * @param reCab linha de rótulos; @param reRotulo rótulo da coluna desejada
+ */
+export function abaixo(doc, reCab, reRotulo) {
+  const i = achar(doc, reCab); if (i < 0 || !doc.linhas[i + 1]) return "";
+  const cab = doc.linhas[i].celulas, k = cab.findIndex((c) => reRotulo.test(c.s)); if (k < 0) return "";
+  const out = [];
+  for (const c of doc.linhas[i + 1].celulas) {
+    const larg = (c.x2 - c.x) / Math.max(1, c.s.length);
+    for (const m of c.s.matchAll(/\S+/g)) {
+      const x = c.x + larg * m.index; let col = 0;
+      cab.forEach((h, j) => { if (h.x <= x + 4) col = j; });
+      if (col === k) out.push(m[0]);
+    }
+  }
+  return out.join(" ");
+}
 /** Índice do centro mais próximo de `cx`. */
 export function maisProximo(cx, centros) {
   let m = 0; centros.forEach((c, k) => { if (Math.abs(c - cx) < Math.abs(centros[m] - cx)) m = k; }); return m;
