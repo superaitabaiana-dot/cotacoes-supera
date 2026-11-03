@@ -1,11 +1,12 @@
 // Leitura automática por regras: identifica a seguradora pelo layout e devolve os campos no contrato da extração.
+import { allianz } from "./allianz.js";
 import { hdi } from "./hdi.js";
 import { bradesco, mapfre, suhai, tokio, zurich } from "./outras.js";
 import { portoAntigo, portoAtual } from "./porto.js";
 import { cobertura, faltantes, resgatar, rotulo } from "./resgate.js";
 import { yelum } from "./yelum.js";
 
-export const LEITORES = [portoAtual, portoAntigo, hdi, yelum, bradesco, mapfre, tokio, zurich, suhai];
+export const LEITORES = [portoAtual, portoAntigo, hdi, yelum, bradesco, mapfre, tokio, zurich, suhai, allianz];
 
 /**
  * @param doc { texto, linhas } de lerPdf.

@@ -100,6 +100,23 @@ export function colunaMaisProxima(celula, colunas) {
   return melhor;
 }
 
+/**
+ * Trechos de uma linha que casam com `re` (global), cada um com o centro horizontal estimado pela posição
+ * do trecho dentro da célula. Serve para tabelas em que o PDF funde células vizinhas ("421,49 150.000,00").
+ */
+export function tokensComX(linha, re) {
+  const out = [];
+  for (const c of linha?.celulas || []) {
+    const larg = (c.x2 - c.x) / Math.max(1, c.s.length);
+    for (const m of c.s.matchAll(re)) out.push({ s: m[0], cx: c.x + larg * (m.index + m[0].length / 2) });
+  }
+  return out;
+}
+/** Índice do centro mais próximo de `cx`. */
+export function maisProximo(cx, centros) {
+  let m = 0; centros.forEach((c, k) => { if (Math.abs(c - cx) < Math.abs(centros[m] - cx)) m = k; }); return m;
+}
+
 // ---------- Resultado no contrato da extração ----------
 export function opcao(o = {}) {
   return { nome: "", fipe: "", franquia: "", danos_materiais: "", danos_corporais: "", danos_morais: "", app: "", guincho: "", carro_reserva: "", vidros: "",

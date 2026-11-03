@@ -1,5 +1,5 @@
 // Bradesco, Mapfre, Tokio Marine, Zurich e Suhai: um layout próprio cada.
-import { R, achar, anoModelo, carroReserva, cel, cep, colunaMaisProxima, data, datas, depois, estadoCivil, extracao, franquia, guincho, opcao, pct, placa, resumirPagamentos, rotuloVidros, rx, sem, servico, simNao, tipoSeguro, up, usoVeiculo, valores } from "./base.js";
+import { R, achar, anoModelo, carroReserva, cel, cep, colunaMaisProxima, data, datas, depois, estadoCivil, extracao, franquia, guincho, maisProximo, opcao, pct, placa, resumirPagamentos, rotuloVidros, rx, sem, servico, simNao, tipoSeguro, tokensComX, up, usoVeiculo, valores } from "./base.js";
 
 const linhaDe = (doc, re) => doc.linhas.find((l) => re.test(l.texto))?.texto || "";
 /** Limite da cobertura; vazio quando a linha diz "não contratada" (o R$ 0,00 ao lado é o prêmio). */
@@ -12,7 +12,10 @@ export const bradesco = {
   ler(doc) {
     const premio = R(rx(doc, /TOTAL A PAGAR:\s*([\d.,]+)/));
     const clausulas = doc.texto.slice(doc.texto.indexOf("CLÁUSULAS"), doc.texto.indexOf("Este cálculo"));
-    const frq = doc.texto.match(/Veículo:\s*([\d.]+,\d{2})\s*\((\d+)\s*da\s*([^)]+)\)/i);
+    // Franquia do casco: "(25 da Obrigatória)" ou só o tipo, como "(Reduzida)".
+    const frqM = doc.texto.match(/Veículo:\s*([\d.]+,\d{2})\s*\(([^)]+)\)/i);
+    const frqT = frqM?.[2].match(/^(\d+)\s*da\s*(.+)$/i);
+    const frq = frqM ? [frqM[0], frqM[1], frqT ? `${frqT[1]}% DA ${frqT[2]}` : frqM[2]] : null;
     const tem = (re) => re.test(sem(clausulas));
     const morais = rx(doc, /D\. Morais\.?:\s*([\d.,]+)/);
     const appM = rx(doc, /Morte p\/ Passageiro:\s*([\d.,]+)/);
@@ -20,7 +23,7 @@ export const bradesco = {
     const o = opcao({
       nome: rx(doc, /Veículo:\s*(Valor de [^\n]+?)\s{2,}/i) || "Valor de mercado referenciado",
       fipe: `${rx(doc, /Fator de Ajuste:\s*(\d+)/)}%`.replace(/^%$/, ""),
-      franquia: frq ? franquia(frq[1], `${frq[2]}% DA ${frq[3]}`) : "",
+      franquia: frq ? franquia(frq[1], frq[2]) : "",
       danos_materiais: R(rx(doc, /D\.M\.:\s*([\d.,]+)/)) || "NÃO CONTRATADO",
       danos_corporais: R(rx(doc, /D\.C\.:\s*([\d.,]+)/)) || "NÃO CONTRATADO",
       danos_morais: morais && morais !== "0,00" ? R(morais) : "NÃO CONTRATADO",
@@ -240,55 +243,76 @@ export const zurich = {
 };
 
 // ---------- Suhai ----------
-const OPCOES_SUHAI = ["Roubo + Furto", "Roubo + Furto + PT Colisão", "Roubo + Furto + RCF", "Roubo + Furto + PT Colisão + RCF", "Terceiros RCF"];
-/** Lê uma linha da tabela de opções da Suhai: "Não Contratado" ocupa uma opção; LMI e prêmio ocupam uma opção. */
-function colunasSuhai(texto) {
-  const corpo = texto.replace(/^[^0-9N]*?(?=Não Contratado|\d)/, "");
-  const toks = [...corpo.matchAll(/Não Contratado|\d+% Fipe|[\d.]+,\d{2}/g)].map((m) => m[0]);
-  const out = []; for (let i = 0; i < toks.length; i++) {
-    if (toks[i] === "Não Contratado") out.push(null);
-    else { out.push({ lmi: toks[i], premio: toks[i + 1] }); i++; }
-  }
-  return out;
-}
+// Quadro de coberturas com uma coluna por opção (pares LMI/Prêmio); o número e o nome das opções variam
+// (formato antigo: 5 opções; atual: 4, com a Compreensiva). Células vizinhas às vezes vêm fundidas
+// ("421,49 150.000,00"), então cada valor é atribuído à coluna pela posição horizontal estimada.
+const TOK_SUHAI = /Não Contratado|Não se aplica|\d+% Fipe|[A-Za-zÀ-ú]+:\s*R\$\s*[\d.]+,\d{2}|[\d.]+,\d{2}|\d+\s*km/gi;
+const nomeSuhai = (s) => up(s.replace(/^OPÇÃO\s+/i, "").replace(/\(\*\)/g, "").replace(/\s*\+\s*/g, " + ").replace(/\(\s+/g, "(").replace(/\s+\)/g, ")"));
 export const suhai = {
   id: "suhai", nome: "Suhai",
   detecta: (doc) => /SUHAI SEGURADORA/.test(doc.texto),
   ler(doc) {
-    const l = (re) => linhaDe(doc, re);
-    const totais = valores(l(/^Prêmio total, com IOF/));
-    const rf = l(/^Ind\. Integral por Roubo\/Furto\s/), rfc = l(/^Ind\. Int\. por Roubo\/Furto\/Colisão/);
-    const dm = colunasSuhai(l(/^RCF - Danos Materiais/)), dc = colunasSuhai(l(/^RCF - Danos Corporais/)), mo = colunasSuhai(l(/^RCF - Danos Morais/));
-    const temRF = [true, false, true, false, false], temPT = colunasSuhai(rfc).map(Boolean);
-    const g = guincho(l(/Guincho/i));
-    // Tabelas de parcelas por opção: grupos de 4 colunas "parcelas, valor, total, juros", em dois blocos (3 + 2 opções).
-    const parcelas = OPCOES_SUHAI.map(() => []);
-    let base = 0;
-    for (const re of [/^OPÇÃO ROUBO \+ FURTO\s+OPÇÃO/, /^OPÇÃO ROUBO \+ FURTO \+ PT COLISÃO\s+TERCEIROS/]) {
-      const i = achar(doc, re); if (i < 0) continue;
-      let qtd = 0;
-      for (let j = i + 1; j < doc.linhas.length; j++) {
-        const t = doc.linhas[j].texto; if (/^Parcelas|^\+ RCF/.test(t)) continue; if (!/^\d+\s/.test(t)) break;
-        const gs = [...t.matchAll(/(\d+)\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s*([\d,]+)/g)];
-        qtd = Math.max(qtd, gs.length);
-        gs.forEach((m, k) => parcelas[base + k]?.push({ n: +m[1], parcela: m[2], total: m[3], juros: parseFloat(m[4].replace(",", ".")) > 0 }));
+    const L = (re) => doc.linhas.find((x) => re.test(x.texto));
+    const iCab = achar(doc, /^LMI\s+Prêmio/);
+    const cabCel = iCab >= 0 ? doc.linhas[iCab].celulas : [];
+    const cols = []; cabCel.forEach((c, k) => { if (/^LMI$/.test(c.s) && cabCel[k + 1]) cols.push((c.x + cabCel[k + 1].x2) / 2); });
+    const porCol = (...ls) => { const r = cols.map(() => []); for (const l of ls) for (const t of tokensComX(l, TOK_SUHAI)) r[maisProximo(t.cx, cols)]?.push(t.s); return r; };
+    const lmi = (toks) => (toks?.[0] && /,\d{2}$/.test(toks[0]) ? R(toks[0]) : "");
+    const temFipe = (toks) => toks?.find((t) => /Fipe/i.test(t));
+    // Prêmio total: a linha do rótulo e as que só têm valores logo abaixo (valor que não coube na linha).
+    const iTot = achar(doc, /^Prêmio total, com IOF/);
+    const lsTot = iTot < 0 ? [] : [doc.linhas[iTot]];
+    for (let j = iTot + 1; iTot >= 0 && /^[\d.,\s]+$/.test(doc.linhas[j]?.texto || ""); j++) lsTot.push(doc.linhas[j]);
+    const totais = porCol(...lsTot).map((t) => R(t.find((v) => /,\d{2}$/.test(v))));
+    const comp = porCol(L(/^Compreensiva\s/)), pt = porCol(L(/^Ind\. Int\. por Roubo\/Furto\/Colisão/)), rf = porCol(L(/^Ind\. Integral por Roubo\/Furto\s/));
+    const dm = porCol(L(/^RCF - Danos Materiais/)), dc = porCol(L(/^RCF - Danos Corporais/)), mo = porCol(L(/^RCF - Danos Morais/));
+    const frq = porCol(L(/^Franquia Perdas Parciais/));
+    // Assistência: linhas do bloco entre "Assistência 24 horas" e "Prêmio líquido"; coluna com prêmio = contratada.
+    const iAs = achar(doc, /Assistência 24 horas/), iLiq = achar(doc, /^Prêmio líquido/);
+    const assist = iAs >= 0 && iLiq > iAs ? porCol(...doc.linhas.slice(iAs - 1, iLiq)) : cols.map(() => []);
+    const kmGeral = guincho(iAs >= 0 && iLiq > iAs ? doc.linhas.slice(iAs - 1, iLiq).map((x) => x.texto).join(" ") : "");
+    // Parcelamento: blocos "OPÇÃO ..." com grupos de 4 colunas "parcelas, valor, total, juros"; o nome pode seguir na linha de baixo.
+    const blocos = [];
+    doc.linhas.forEach((x, p) => {
+      if (!/^Parcelas\s+Valor Parcela/.test(x.texto)) return;
+      let i0 = p - 1; while (i0 > p - 4 && !/OPÇÃO|TERCEIROS/i.test(doc.linhas[i0]?.texto || "")) i0--;
+      const cab = doc.linhas[i0]; if (!cab || !/OPÇÃO|TERCEIROS/i.test(cab.texto)) return;
+      const nomes = cab.celulas.map((c) => ({ s: c.s, cx: (c.x + c.x2) / 2 }));
+      for (const cont of doc.linhas.slice(i0 + 1, p)) for (const c of cont.celulas) {
+        const cx = (c.x + c.x2) / 2; nomes.reduce((a, b) => (Math.abs(b.cx - cx) < Math.abs(a.cx - cx) ? b : a)).s += " " + c.s;
       }
-      base += qtd;
-    }
-    const opcoes = OPCOES_SUHAI.map((nome, k) => {
+      const its = nomes.map(() => []);
+      for (let j = p + 1; j < doc.linhas.length; j++) {
+        const t = doc.linhas[j].texto; if (!/^\d+\s/.test(t)) break;
+        [...t.matchAll(/(\d+)\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s*([\d,]+)/g)].forEach((m, k) => its[k]?.push({ n: +m[1], parcela: m[2], total: m[3], juros: parseFloat(m[4].replace(",", ".")) > 0 }));
+      }
+      nomes.forEach((n, k) => blocos.push({ nome: nomeSuhai(n.s), itens: its[k], avista: R(its[k].find((i) => i.n === 1)?.total) }));
+    });
+    const usados = new Set();
+    const opcoes = cols.map((_, k) => {
+      const premio = totais[k] || "";
+      const bloco = blocos.find((b, n) => !usados.has(n) && premio && b.avista === premio);
+      if (bloco) usados.add(blocos.indexOf(bloco));
+      const f = temFipe(comp[k]) ? `${pct(temFipe(comp[k]))} (COMPREENSIVA)` : temFipe(pt[k]) ? `${pct(temFipe(pt[k]))} (ROUBO, FURTO E PERDA TOTAL)` : temFipe(rf[k]) ? `${pct(temFipe(rf[k]))} (SÓ ROUBO/FURTO)` : "NÃO SE APLICA";
+      const fr = frq[k]?.find((t) => /R\$/.test(t));
+      const km = assist[k].find((t) => /km/i.test(t));
       const o = opcao({
-        nome,
-        fipe: temPT[k] ? "100% (ROUBO, FURTO E PERDA TOTAL)" : temRF[k] ? "100% (SÓ ROUBO/FURTO)" : "NÃO SE APLICA",
-        franquia: "NÃO SE APLICA",
-        danos_materiais: R(dm[k]?.lmi) || "NÃO CONTRATADO", danos_corporais: R(dc[k]?.lmi) || "NÃO CONTRATADO", danos_morais: R(mo[k]?.lmi) || "NÃO CONTRATADO",
-        app: "NÃO CONTRATADO", guincho: g || "NÃO CONTRATADO", carro_reserva: "NÃO", vidros: "NÃO CONTRATADO",
+        nome: bloco?.nome || "",
+        fipe: f,
+        franquia: fr ? franquia(fr, fr.split(":")[0]) : "NÃO SE APLICA",
+        danos_materiais: lmi(dm[k]) || "NÃO CONTRATADO", danos_corporais: lmi(dc[k]) || "NÃO CONTRATADO", danos_morais: lmi(mo[k]) || "NÃO CONTRATADO",
+        app: "NÃO CONTRATADO",
+        guincho: assist[k].some((t) => /,\d{2}$/.test(t)) ? guincho(km) || kmGeral || "CONTRATADO" : "NÃO CONTRATADO",
+        carro_reserva: "NÃO", vidros: "NÃO CONTRATADO",
         logo_marca: false, pequenos_reparos: false, roda_pneu: false,
-        premio_total: R(totais[k]),
+        premio_total: premio,
       });
-      o.pagamentos = resumirPagamentos("PARCELAMENTO", parcelas[k], o.premio_total);
+      o.pagamentos = bloco ? resumirPagamentos("PARCELAMENTO", bloco.itens, premio) : [];
       return o;
     });
-    if (!rf) opcoes.forEach((o) => { o.fipe = ""; });
+    // Opções que só aparecem no parcelamento (sem coluna no quadro de coberturas): ficam de fora, com aviso.
+    const soParcelas = blocos.filter((b, n) => !usados.has(n) && b.avista).map((b) => `${b.nome} (${b.avista} à vista)`);
+    const alertas = soParcelas.length ? [`A Suhai também traz, só na tabela de parcelamento, sem quadro de coberturas: ${soParcelas.join("; ")}. Não foram incluídas; confira se interessam ao cliente.`] : [];
     const prop = depois(doc, /^Nome\/Razão Social\s+Tipo Pessoa/);
     const iEC = achar(doc, /^Nome Social\s+Sexo\s+Nascimento\s+Estado Civil/);
     let ec = cel(doc.linhas[iEC + 1], 3);
@@ -304,7 +328,7 @@ export const suhai = {
       ano_modelo: anoModelo(cel(depois(doc, /^Ano Fabr\.\/Modelo/), 0)),
       vigencia_inicio: data(vig?.[1]), vigencia_fim: data(vig?.[2]),
       data_cotacao: data(rx(doc, /Data:\s*(\d{2}\/\d{2}\/\d{4})/)), validade_dias: dias ? Number(dias) : null,
-      seguradoras: [{ seguradora: "Suhai", numero_cotacao: rx(doc, /Cálculo Nº:\s*(\S+)/), opcoes }],
+      seguradoras: [{ seguradora: "Suhai", numero_cotacao: rx(doc, /Cálculo Nº:\s*(\S+)/), opcoes }], alertas,
     });
   },
 };
