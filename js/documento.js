@@ -91,7 +91,7 @@ function barrasPreco(pdf, dados, segs, y) {
   let yy = y + 130;
   for (const s of segs) {
     const p = preco(s), rec = s.id === dados.recomendada, eMenor = p === menor;
-    texto(pdf, [s.nome, nomeOpcao(s)].filter(Boolean).join(" · "), 160, yy, { px: 40, max: 570 });
+    texto(pdf, s.nome, 160, yy, { px: 40, max: 570 });
     texto(pdf, melhorParcelamento(opcaoAtual(s)), 160, yy + 40, { px: 26, cor: SLATE, peso: "normal", max: 570 });
     caixa(pdf, x0, yy - 34, x0 + larg, yy - 34 + alt, { fundo: MIST, raio: 23 });
     if (!isNaN(p)) {
