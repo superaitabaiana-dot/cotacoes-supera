@@ -239,7 +239,21 @@ table.mesa{border-collapse:separate;border-spacing:0;min-width:100%;font-size:14
 .doc{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:22px;align-items:start}
 @media (max-width:1100px){.doc{grid-template-columns:minmax(0,1fr)}}
 .paginas{display:flex;flex-direction:column;gap:18px;align-items:center}
-.paginas canvas{width:100%;max-width:820px;height:auto;border-radius:6px;box-shadow:var(--sombra);background:#fff}
+.paginas canvas{display:block;width:100%;height:auto;border-radius:6px;box-shadow:var(--sombra);background:#fff}
+.pagina-doc{position:relative;margin:0;width:100%;max-width:820px}
+.pagina-doc figcaption{display:none;position:absolute;top:14px;left:50%;transform:translateX(-50%);padding:6px 12px;border-radius:999px;background:var(--fg);color:var(--bg);font-size:13px;font-weight:600;white-space:nowrap}
+.pagina-doc.fora canvas{opacity:.28}
+.pagina-doc.fora figcaption{display:block}
+.sel-paginas{border:1px solid var(--line);border-radius:var(--r-sm);padding:10px 12px;margin:0;min-width:0}
+.sel-paginas legend{font-weight:600;padding:0 6px}
+.sel-acoes{display:flex;gap:4px;margin:0 0 4px -8px}
+.sel-acoes button{font-size:13px;padding-block:4px}
+.sel-lista{display:flex;flex-direction:column;max-height:min(42vh,340px);overflow-y:auto}
+.sel-pagina{display:flex;align-items:center;gap:8px;padding:6px 2px;font-size:14px;font-weight:400;cursor:pointer;min-width:0}
+.sel-pagina input{width:18px;height:18px;flex:none;margin:0}
+.sel-nome{flex:1;min-width:0;overflow-wrap:anywhere}
+.sel-det{flex:none;font-size:12.5px;font-variant-numeric:tabular-nums}
+.sel-aviso{margin:6px 0 0;font-size:13px;color:var(--bad)}
 .passos{display:flex;flex-direction:column;gap:8px;font-size:14px;margin:0;padding:0;list-style:none}
 .passos li{display:flex;gap:8px;align-items:baseline}
 .passos .ok{color:var(--ok);font-weight:700}

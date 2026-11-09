@@ -260,13 +260,15 @@ function paginaLayoutB(pdf, dados, s, ctx, nova) {
 /**
  * Gera o documento completo.
  * @param ctx { consultor, whatsapp, identificacao } textos do rodapé
- * @returns Blob do PDF
+ * @param ctx.omitir Set de chaves de página que não entram no PDF (seletor de páginas)
+ * @returns { blob, paginas: [{ chave, rotulo, detalhe }] } com todas as páginas montadas, omitidas ou não
  */
 export async function gerarDocumento(dados, ctx) {
   await carregarArte(ctx.base);
   const { jsPDF } = window.jspdf;
   const pdf = new jsPDF({ unit: "mm", format: "a4", compress: true });
   const segs = ordenadas(dados);
+  const paginas = [];
   let primeira = true;
   if (segs.length > 1) {
     const cmp = compararCoberturas(dados);
@@ -278,10 +280,18 @@ export async function gerarDocumento(dados, ctx) {
     y = iguais(pdf, cmp.iguais, y, ctx);
     glossario(pdf, y, ctx);
     primeira = false;
+    const n = pdf.getNumberOfPages();
+    for (let i = 1; i <= n; i++) paginas.push({ chave: `comparativo-${i}`, rotulo: n > 1 ? `Comparativo (${i} de ${n})` : "Comparativo", detalhe: "" });
   }
-  for (const s of segs) { paginaLayoutB(pdf, dados, s, ctx, !primeira); primeira = false; }
+  for (const s of segs) {
+    paginaLayoutB(pdf, dados, s, ctx, !primeira); primeira = false;
+    paginas.push({ chave: `seguradora-${s.id}`, rotulo: s.nome, detalhe: opcaoAtual(s).premio_total || "" });
+  }
+  const omitir = ctx.omitir || new Set();
+  if (paginas.every((p) => omitir.has(p.chave))) throw new Error("Selecione ao menos uma página para o PDF.");
+  for (let i = paginas.length; i >= 1; i--) if (omitir.has(paginas[i - 1].chave)) pdf.deletePage(i); // de trás para a frente: a numeração não muda
   pdf.setProperties({ title: "Cotação Seguro Auto - Supera", creator: "Supera Seguros e Planejamento" });
-  return pdf.output("blob");
+  return { blob: pdf.output("blob"), paginas };
 }
 
 export function nomeArquivo(dados, codigo, versao) {

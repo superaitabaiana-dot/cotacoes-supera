@@ -180,7 +180,7 @@ async function telaLista() {
 // ---------- Cotação: estado ----------
 async function telaCotacao(id) {
   if (E && (id ? E.id === id : !E.id)) return desenharEtapa(); // volta para a mesma cotação aberta
-  E = { id, codigo: "", versoes: [], dados: novaCotacao(), textos: new Map(), arquivos: [], etapa: 1, ack: false, sujo: false, dono: null, modo: "seguradoras", doc: null };
+  E = { id, codigo: "", versoes: [], dados: novaCotacao(), textos: new Map(), arquivos: [], etapa: 1, ack: false, sujo: false, dono: null, modo: "seguradoras", doc: null, paginasFora: new Set() };
   if (id) {
     try {
       const r = await api.abrirCotacao(id);
@@ -331,7 +331,7 @@ function adicionar(files) {
 let processando = 0;
 function processar() {
   const fila = E.arquivos.filter((a) => a.estado === "fila");
-  while (processando < 2 && fila.length) { const a = fila.shift(); processando++; lerArquivo(a).finally(() => { processando--; processar(); }); }
+  while (processando < 4 && fila.length) { const a = fila.shift(); processando++; lerArquivo(a).finally(() => { processando--; processar(); }); }
   if (E.etapa === 1) etapaArquivos();
 }
 
@@ -346,7 +346,7 @@ async function lerArquivo(a) {
     if (semTexto(doc)) {
       // PDF sem texto: as letras foram gravadas como desenho (ex.: "Microsoft Print to PDF") ou é imagem. Lê por OCR, no navegador.
       a.estado = "ocr"; a.msg = "O PDF não tem texto (as letras estão gravadas como imagem). Preparando a leitura da imagem…"; atualizar();
-      doc = await lerPorOCR(await a.file.arrayBuffer(), (p, n) => { a.msg = `O PDF não tem texto; lendo a imagem: página ${p} de ${n}…`; atualizar(); });
+      doc = await lerPorOCR(await a.file.arrayBuffer(), (p, n) => { a.msg = `O PDF não tem texto; lendo a imagem: ${p} de ${n} ${n > 1 ? "páginas prontas" : "página pronta"}…`; atualizar(); });
       if (semTexto(doc)) throw new Error("Não foi possível ler este PDF nem pela imagem. Peça à seguradora o PDF original (baixado do portal, não impresso).");
       a.ocr = doc.ocr;
     }
@@ -549,20 +549,48 @@ function rodapeCtx(identificacao) {
   return { consultor: [quem.nome, fmtTel(quem.telefone)].filter(Boolean).join(" · "), whatsapp: cfg.whatsapp_supera || "", identificacao, base: "assets/" };
 }
 
-async function desenharPaginas(blob, alvo) {
+async function desenharPaginas(blob, alvo, info) {
   const pdf = await pdfjsLib.getDocument({ data: await blob.arrayBuffer() }).promise;
   const telas = [];
   for (let i = 1; i <= pdf.numPages; i++) {
     const pg = await pdf.getPage(i); const vp = pg.getViewport({ scale: 1.6 });
-    const c = el("canvas", { width: vp.width, height: vp.height, "aria-label": `Página ${i} do documento` });
+    const c = el("canvas", { width: vp.width, height: vp.height, "aria-label": `Página ${i} do documento: ${info[i - 1].rotulo}` });
     await pg.render({ canvasContext: c.getContext("2d"), viewport: vp }).promise;
-    telas.push(c);
+    telas.push(el("figure", { class: "pagina-doc", dataset: { chave: info[i - 1].chave } }, c, el("figcaption", {}, "Esta página não entra no PDF")));
   }
   repor(alvo, ...telas);
 }
 
+/** Lista de páginas com caixas de seleção: o que estiver desmarcado não entra no PDF baixado nem na cópia do Drive. */
+function seletorPaginas(lista) {
+  for (const k of [...E.paginasFora]) if (!lista.some((p) => p.chave === k)) E.paginasFora.delete(k);
+  const resumo_ = el("span", { class: "mut", id: "paginasResumo" });
+  const aviso = el("p", { class: "sel-aviso", role: "alert", hidden: true }, "Marque ao menos uma página para salvar.");
+  const caixas = [];
+  const atualizar = () => {
+    const n = lista.length - E.paginasFora.size;
+    resumo_.textContent = `${n} de ${lista.length}`;
+    aviso.hidden = n > 0;
+    const b = $("#salvar"); if (b) b.disabled = n === 0;
+    for (const c of caixas) c.checked = !E.paginasFora.has(c.dataset.chave);
+    for (const f of $$("#paginas .pagina-doc")) f.classList.toggle("fora", E.paginasFora.has(f.dataset.chave));
+  };
+  const todas = (marcar) => { E.paginasFora.clear(); if (!marcar) lista.forEach((p) => E.paginasFora.add(p.chave)); atualizar(); };
+  const linhas = lista.map((p, i) => {
+    const c = el("input", { type: "checkbox", dataset: { chave: p.chave }, onchange: (ev) => { if (ev.target.checked) E.paginasFora.delete(p.chave); else E.paginasFora.add(p.chave); atualizar(); } });
+    caixas.push(c);
+    return el("label", { class: "sel-pagina" }, c, el("span", { class: "sel-nome" }, `${i + 1}. ${p.rotulo}`), p.detalhe ? el("span", { class: "mut sel-det" }, p.detalhe) : null);
+  });
+  const caixa = el("fieldset", { class: "sel-paginas", id: "selPaginas" },
+    el("legend", {}, "Páginas do PDF ", resumo_),
+    el("div", { class: "sel-acoes" }, el("button", { type: "button", class: "discreto", onclick: () => todas(true) }, "Marcar todas"), el("button", { type: "button", class: "discreto", onclick: () => todas(false) }, "Desmarcar todas")),
+    el("div", { class: "sel-lista" }, linhas), aviso);
+  return { caixa, atualizar };
+}
+
 async function etapaDocumento() {
   const paginas = el("div", { class: "paginas", id: "paginas" }, el("p", { class: "mut" }, "Montando o documento…"));
+  const lugarSeletor = el("div");
   const passos = el("ul", { class: "passos", id: "passos" });
   const salvar = el("button", { class: "primario", id: "salvar", onclick: salvarEBaixar }, E.id ? "Salvar nova versão e baixar" : "Salvar e baixar PDF");
   const qtd = incluidas(E.dados).length;
@@ -573,18 +601,23 @@ async function etapaDocumento() {
         el("section", { class: "painel", style: "display:flex;flex-direction:column;gap:14px" },
           el("h2", {}, "Documento"),
           el("p", { class: "mut" }, qtd > 1 ? `Comparativo de ${qtd} seguradoras, seguido de uma página no padrão Supera para cada uma.` : "Uma página no padrão Supera."),
-          el("p", { class: "mut", style: "font-size:13px" }, "Ao salvar, o sistema registra uma nova versão, baixa o PDF e guarda uma cópia no Drive da Supera junto com os PDFs originais."),
+          el("p", { class: "mut", style: "font-size:13px" }, "Ao salvar, o sistema registra uma nova versão, baixa o PDF com as páginas marcadas e guarda uma cópia no Drive da Supera junto com os PDFs originais."),
+          lugarSeletor,
           el("div", { class: "linha" }, salvar, el("button", { class: "discreto", onclick: () => { E.etapa = 2; desenharEtapa(); } }, "Voltar à conferência")),
           passos)))));
   try {
-    E.doc = await gerarDocumento(E.dados, rodapeCtx("Prévia"));
-    await desenharPaginas(E.doc, paginas);
+    const previa = await gerarDocumento(E.dados, rodapeCtx("Prévia")); // sempre com todas as páginas
+    E.doc = previa.blob;
+    await desenharPaginas(E.doc, paginas, previa.paginas);
+    if (previa.paginas.length > 1) { const s = seletorPaginas(previa.paginas); repor(lugarSeletor, s.caixa); s.atualizar(); }
+    else E.paginasFora.clear();
   } catch (x) { console.error(x); repor(paginas, el("p", { style: "color:var(--bad)" }, "Não foi possível montar o documento: " + x.message)); salvar.disabled = true; }
 }
 
 async function salvarEBaixar() {
   const botao = $("#salvar"), passos = $("#passos");
   const passo = (t) => { const li = el("li", {}, el("span", { class: "estado ocupado" }), t); passos.append(li); return { ok: (x = "") => repor(li, el("span", { class: "ok" }, "✓"), t + x), falha: (m) => repor(li, el("span", { class: "falha" }, "!"), m) }; };
+  if (E.paginasFora.size && $$("#paginas .pagina-doc").length === E.paginasFora.size) return toast("Marque ao menos uma página para salvar.", true);
   botao.disabled = true; repor(passos, );
   try {
     const d = E.dados, res = resumo(d);
@@ -605,7 +638,7 @@ async function salvarEBaixar() {
     p.ok(` (${E.codigo}, versão ${numero})`);
 
     p = passo("Gerando o PDF final");
-    const blob = await gerarDocumento(d, rodapeCtx(`${E.codigo} · versão ${numero} · emitido em ${fmtDate(hoje())}`));
+    const { blob } = await gerarDocumento(d, { ...rodapeCtx(`${E.codigo} · versão ${numero} · emitido em ${fmtDate(hoje())}`), omitir: E.paginasFora });
     const nome = nomeArquivo(d, E.codigo, numero);
     baixar(blob, nome); p.ok(" e baixado");
     E.sujo = false;

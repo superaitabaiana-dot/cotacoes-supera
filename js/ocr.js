@@ -107,42 +107,82 @@ export function palavrasParaItens(linhasOCR, alturaPt, escala = ESCALA_OCR) {
   return { itens, suspeitos };
 }
 
+// ---------- Grupo de OCRs ----------
+// Um único grupo atende todos os arquivos: as páginas são lidas em paralelo, sem reduzir a resolução. Medido com 3 PDFs
+// reais (10 páginas): 4 OCRs simultâneos levam cerca de um terço do tempo de 1, com os mesmos valores; acima de 4 quase
+// não melhora, porque o limite passa a ser desenhar as páginas, que acontece na thread principal.
+const MAX_OCRS = 4, OCIOSO_MS = 60000;
+const qtdOCRs = () => Math.min(MAX_OCRS, Math.max(1, (navigator.hardwareConcurrency || 2) - 1));
+let grupo = null, usos = 0, desliga = null, naFila = 0;
+const aguardando = [];
+
+async function novoGrupo(n) {
+  const sch = Tesseract.createScheduler();
+  const criar = async () => { const w = await Tesseract.createWorker("por", 1); await w.setParameters({ preserve_interword_spaces: "1" }); sch.addWorker(w); };
+  await criar(); // o primeiro baixa o dicionário; os demais o encontram no cache do navegador
+  await Promise.all(Array.from({ length: n - 1 }, criar));
+  return sch;
+}
+function reservarGrupo() {
+  clearTimeout(desliga); usos++;
+  grupo ||= novoGrupo(qtdOCRs()).catch((e) => { grupo = null; throw e; });
+  return grupo;
+}
+function devolverGrupo() {
+  if (--usos > 0) return;
+  desliga = setTimeout(async () => { const g = grupo; grupo = null; (await g)?.terminate(); }, OCIOSO_MS); // libera a memória
+}
+/** Limita as páginas já desenhadas à espera de OCR (cada uma ocupa cerca de 32 MB). */
+async function vagaNaFila(max) { while (naFila >= max) await new Promise((ok) => aguardando.push(ok)); naFila++; }
+function soltarVaga() { naFila--; aguardando.shift()?.(); }
+
+/** Desenha a página, apaga a grade e devolve o canvas pronto para o OCR. */
+async function prepararPagina(pdf, p) {
+  const pg = await pdf.getPage(p), vp = pg.getViewport({ scale: ESCALA_OCR });
+  const cv = document.createElement("canvas"); cv.width = Math.ceil(vp.width); cv.height = Math.ceil(vp.height);
+  const ctx = cv.getContext("2d", { willReadFrequently: true });
+  ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, cv.width, cv.height);
+  await pg.render({ canvasContext: ctx, viewport: vp }).promise;
+  const img = ctx.getImageData(0, 0, cv.width, cv.height), d = img.data;
+  const cinza = new Uint8ClampedArray(cv.width * cv.height);
+  for (let i = 0; i < cinza.length; i++) cinza[i] = 0.299 * d[4 * i] + 0.587 * d[4 * i + 1] + 0.114 * d[4 * i + 2];
+  apagarGrade(cinza, cv.width, cv.height);
+  for (let i = 0; i < cinza.length; i++) { d[4 * i] = d[4 * i + 1] = d[4 * i + 2] = cinza[i]; d[4 * i + 3] = 255; }
+  ctx.putImageData(img, 0, 0);
+  return { cv, alturaPt: vp.height / ESCALA_OCR };
+}
+
 /**
  * Lê um PDF sem texto por OCR.
  * @param buf ArrayBuffer do PDF (uma cópia nova: o pdf.js pode transferir o buffer)
- * @param aoProgresso (pagina, total) => void
+ * @param aoProgresso (paginasProntas, total) => void
  * @returns { texto, linhas, ocr: { paginas, suspeitos } }
  */
 export async function lerPorOCR(buf, aoProgresso = () => {}) {
   await carregarTesseract();
   const pdf = await pdfjsLib.getDocument({ data: buf, isEvalSupported: false }).promise;
-  const worker = await Tesseract.createWorker("por", 1);
-  await worker.setParameters({ preserve_interword_spaces: "1" });
-  const paginas = [], suspeitos = [];
+  const total = pdf.numPages; let prontas = 0;
+  aoProgresso(0, total);
+  let resultados;
   try {
-    for (let p = 1; p <= pdf.numPages; p++) {
-      aoProgresso(p, pdf.numPages);
-      const pg = await pdf.getPage(p), vp = pg.getViewport({ scale: ESCALA_OCR });
-      const cv = document.createElement("canvas"); cv.width = Math.ceil(vp.width); cv.height = Math.ceil(vp.height);
-      const ctx = cv.getContext("2d", { willReadFrequently: true });
-      ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, cv.width, cv.height);
-      await pg.render({ canvasContext: ctx, viewport: vp }).promise;
-      const img = ctx.getImageData(0, 0, cv.width, cv.height), d = img.data;
-      const cinza = new Uint8ClampedArray(cv.width * cv.height);
-      for (let i = 0; i < cinza.length; i++) cinza[i] = 0.299 * d[4 * i] + 0.587 * d[4 * i + 1] + 0.114 * d[4 * i + 2];
-      apagarGrade(cinza, cv.width, cv.height);
-      for (let i = 0; i < cinza.length; i++) { d[4 * i] = d[4 * i + 1] = d[4 * i + 2] = cinza[i]; d[4 * i + 3] = 255; }
-      ctx.putImageData(img, 0, 0);
-      const { data } = await worker.recognize(cv, {}, { text: false, blocks: true });
-      const linhasOCR = [];
-      for (const b of data.blocks || []) for (const par of b.paragraphs) for (const l of par.lines)
-        linhasOCR.push(l.words.map((w) => ({ s: w.text, conf: w.confidence, x0: w.bbox.x0, x1: w.bbox.x1, base: (w.baseline.y0 + w.baseline.y1) / 2 })));
-      const r = palavrasParaItens(linhasOCR, vp.height / ESCALA_OCR);
-      paginas.push(r.itens); suspeitos.push(...r.suspeitos);
-      cv.width = cv.height = 0; // libera a memória do canvas
+    const sch = await reservarGrupo();
+    const tarefas = [];
+    for (let p = 1; p <= total; p++) {
+      await vagaNaFila(qtdOCRs() + 2);
+      let pagina;
+      try { pagina = await prepararPagina(pdf, p); } catch (e) { soltarVaga(); throw e; }
+      const tarefa = sch.addJob("recognize", pagina.cv, {}, { text: false, blocks: true }).then(({ data }) => {
+        const linhasOCR = [];
+        for (const b of data.blocks || []) for (const par of b.paragraphs) for (const l of par.lines)
+          linhasOCR.push(l.words.map((w) => ({ s: w.text, conf: w.confidence, x0: w.bbox.x0, x1: w.bbox.x1, base: (w.baseline.y0 + w.baseline.y1) / 2 })));
+        return palavrasParaItens(linhasOCR, pagina.alturaPt);
+      }).finally(() => { pagina.cv.width = pagina.cv.height = 0; soltarVaga(); aoProgresso(++prontas, total); });
+      tarefa.catch(() => {}); // o erro é tratado no Promise.all abaixo
+      tarefas.push(tarefa);
     }
-  } finally { await worker.terminate(); }
-  const doc = montarLinhas(paginas);
-  doc.ocr = { paginas: pdf.numPages, suspeitos };
+    resultados = await Promise.all(tarefas);
+  } finally { devolverGrupo(); }
+  const doc = montarLinhas(resultados.map((r) => r.itens));
+  doc.ocr = { paginas: total, suspeitos: resultados.flatMap((r) => r.suspeitos) };
   return doc;
 }
