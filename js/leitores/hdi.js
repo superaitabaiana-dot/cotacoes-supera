@@ -71,7 +71,7 @@ export const hdi = {
       cep: cep(rx(doc, /CEP Pernoite:\s*(\d+)/)),
       uso: usoVeiculo(rx(doc, /Utilizacao do Veiculo\s+(.+)/i)),
       tipo: tipoSeguro(doc.linhas.slice(0, 10).map((l) => l.texto).join(" ")),
-      seguradora_anterior: up(rx(doc, /Companhia Anterior:\s*(.+?)\s{2,}/)),
+      seguradora_anterior: up(rx(doc, /Companhia Anterior:\s*(.+?)(?:\s{2,}|\s*$)/m)),
       bonus: String(parseInt(rx(doc, /Classe Bônus:\s*(\d+)/), 10) || ""),
       vencimento_anterior: data(rx(doc, /Fim da Vig\. Anterior:\s*(\S+)/)),
       veiculo: up(rx(doc, /Veículo:\s*\d+\s*-\s*(.+?)\s*\(FIPE/)),

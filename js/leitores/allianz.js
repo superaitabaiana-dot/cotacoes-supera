@@ -22,7 +22,7 @@ export const allianz = {
   id: "allianz", nome: "Allianz",
   detecta: (doc) => /ALLIANZ/i.test(doc.texto) && /DETALHES DAS OFERTAS/.test(doc.texto),
   ler(doc) {
-    // Franquia: quadro único "Franquia | Valor (R$)" (a mesma para as ofertas com casco compreensivo).
+    // Franquia: quadro único "Franquia | Valor (R$)", o mesmo para todas as ofertas.
     const iFr = achar(doc, /^Franquia\s+Valor \(R\$\)/);
     const lFr = iFr >= 0 ? doc.linhas[iFr + 1] : null;
     const frq = lFr && R(lFr.texto) ? franquia(lFr.celulas.at(-1).s, lFr.celulas[0].s) : "";
@@ -42,14 +42,16 @@ export const allianz = {
       const as = porCol(linha(/^Assistência 24/)), tot = porCol(linha(/^Preço Total/));
       const lim = (toks) => (toks?.[0] && /,\d{2}$/.test(toks[0]) ? R(toks[0]) : "");
       const nao = (t) => !t || /Não Contratado|^-$/i.test(t);
+      // Nome do casco como está no PDF ("Casco - Básica Compreensiva -"). Vai no campo FIPE, como nas outras seguradoras: "100% (descrição)".
+      const tipoCasco = up(linha(/^Casco/)?.texto.replace(/^Casco\s*-\s*/i, "").replace(/\s*-\s*$/, ""));
       b.nomes.forEach((nomeBruto, k) => {
         const soRoubo = /\*\s*$/.test(nomeBruto); // nota "*": vale só para roubo, furto ou incêndio total
         const fipe = pct(casco[k]?.find((t) => /FIPE/i.test(t)));
         const g = gu[k]?.[0];
         opcoes.push(opcao({
           nome: up(nomeOferta(nomeBruto)),
-          fipe: fipe ? (soRoubo ? `${fipe} (SÓ ROUBO/FURTO/INCÊNDIO)` : fipe) : "",
-          franquia: soRoubo ? "NÃO SE APLICA" : frq,
+          fipe: fipe && tipoCasco ? `${fipe} (CASCO ${tipoCasco}${soRoubo ? ", SÓ ROUBO, FURTO OU INCÊNDIO TOTAL" : ""})` : fipe,
+          franquia: frq, // sempre o valor do quadro do PDF; a restrição da nota "*" vai no aviso e no campo FIPE
           danos_materiais: lim(dm[k]) || "NÃO CONTRATADO", danos_corporais: lim(dc[k]) || "NÃO CONTRATADO", danos_morais: lim(mo[k]) || "NÃO CONTRATADO",
           app: lim(app[k]) ? `${lim(app[k])} POR PASSAGEIRO` : "NÃO CONTRATADO",
           guincho: nao(as[k]?.[0]) && nao(g) ? "NÃO CONTRATADO" : /LIVRE/i.test(g || "") ? "SEM LIMITE DE KM" : guincho(g) || up(as[k]?.[0]),
@@ -96,7 +98,7 @@ export const allianz = {
       validade_cotacao: data(rx(doc, /condições desta cotação até\s*(\S+)/)),
       cobertura_menor_25: simNao(rx(doc, /idade entre 18 a 25 anos:\s*(\S+)/)),
       seguradoras: [{ seguradora: "Allianz", numero_cotacao: rx(doc, /Nº Cotação:\s*(\d+)/), opcoes }],
-      alertas: frq ? ["A Allianz mostra uma única franquia para todas as ofertas com casco compreensivo; confira."] : [],
+      alertas: frq ? ["A Allianz mostra uma única franquia para todas as ofertas; confira. Pela nota do PDF, a oferta marcada com * vale só para roubo, furto ou incêndio total, sem cobertura de colisão ou perda parcial."] : [],
     });
   },
 };

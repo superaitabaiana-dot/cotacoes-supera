@@ -77,6 +77,11 @@ function cartaoCliente(pdf, dados, segs) {
   cel(1650, 600, "COTADO EM · VÁLIDO ATÉ", [c.data_cotacao, c.validade_cotacao].filter(Boolean).join(" · "), 640);
 }
 
+/** Nome curto da opção escolhida, só quando a seguradora cotou mais de uma; o que vem entre parênteses não cabe no documento. */
+function nomeOpcao(s) {
+  return s.opcoes.length > 1 ? String(opcaoAtual(s).nome || "").replace(/\s*\(.*$/, "").trim().toUpperCase() : "";
+}
+
 function barrasPreco(pdf, dados, segs, y) {
   titulo(pdf, "Preço total por seguradora", y);
   texto(pdf, "Do menor para o maior preço. O comprimento das barras é proporcional ao valor.", 160, y + 52, { px: 28, cor: SLATE, peso: "normal" });
@@ -86,7 +91,7 @@ function barrasPreco(pdf, dados, segs, y) {
   let yy = y + 130;
   for (const s of segs) {
     const p = preco(s), rec = s.id === dados.recomendada, eMenor = p === menor;
-    texto(pdf, s.nome, 160, yy, { px: 40, max: 570 });
+    texto(pdf, [s.nome, nomeOpcao(s)].filter(Boolean).join(" · "), 160, yy, { px: 40, max: 570 });
     texto(pdf, melhorParcelamento(opcaoAtual(s)), 160, yy + 40, { px: 26, cor: SLATE, peso: "normal", max: 570 });
     caixa(pdf, x0, yy - 34, x0 + larg, yy - 34 + alt, { fundo: MIST, raio: 23 });
     if (!isNaN(p)) {
@@ -248,7 +253,9 @@ function paginaLayoutB(pdf, dados, s, ctx, nova) {
     if (f.a === "center") texto(pdf, t, (f.x0 + f.x1) / 2, f.y, { px: f.s, cor: f.c || NAVY, max: f.x1 - f.x0, alinhar: "center" });
     else texto(pdf, t, f.x0, f.y, { px: f.s, cor: f.c || NAVY, max: f.x1 - f.x0 });
   }
-  if (s.id === dados.recomendada) texto(pdf, "RECOMENDADA PELO SEU CONSULTOR", 219, 680, { px: 24, cor: SKY_CLARO, espaco: 3, max: 620 });
+  const opc = nomeOpcao(s), recomendada = s.id === dados.recomendada;
+  if (opc) texto(pdf, `OPÇÃO: ${opc}`, 219, recomendada ? 660 : 672, { px: 26, cor: BRANCO, max: 620 });
+  if (recomendada) texto(pdf, "RECOMENDADA PELO SEU CONSULTOR", 219, opc ? 698 : 680, { px: 24, cor: SKY_CLARO, espaco: 3, max: 620 });
   for (const [kk, [x, y]] of Object.entries(CHECKS)) {
     if (!v[kk]) continue;
     pdf.setFillColor(...NAVY); pdf.roundedRect((x - CHECK_HALF) * k, (y - CHECK_HALF) * k, 2 * CHECK_HALF * k, 2 * CHECK_HALF * k, 14 * k, 14 * k, "F");

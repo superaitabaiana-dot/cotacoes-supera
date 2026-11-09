@@ -25,6 +25,15 @@ export function novaCotacao() {
   return { fonte: "seguradoras", comum: { tipo: "" }, seguradoras: [], fontes: [], recomendada: null, nota: "", validade_calculada: false };
 }
 
+/**
+ * Opção que abre selecionada: a primeira completa (casco com franquia em R$, sem restrição a roubo/furto ou perda total),
+ * para o comparativo ficar equivalente entre as seguradoras. Sem nenhuma completa, a primeira. O consultor pode trocar.
+ */
+export function opcaoCompleta(opcoes = []) {
+  const i = opcoes.findIndex((o) => o.fipe && /R\$/.test(o.franquia || "") && !/SÓ ROUBO|SÓ INCÊNDIO|PERDA TOTAL|NÃO SE APLICA/i.test(o.fipe));
+  return i < 0 ? 0 : i;
+}
+
 /** Acrescenta a leitura de um PDF à cotação. `fonte` = { id, arquivo_nome, extracao, ocr? } (ocr: lido pela imagem). */
 export function incorporar(dados, fonte) {
   const x = fonte.extracao || {};
@@ -42,7 +51,7 @@ export function incorporar(dados, fonte) {
   for (const s of x.seguradoras || []) {
     dados.seguradoras.push({
       id: uid(), nome: s.seguradora || "Seguradora", numero: s.numero_cotacao || "", fonte_id: fonte.id,
-      incluir: true, opcao: 0,
+      incluir: true, opcao: opcaoCompleta(s.opcoes),
       opcoes: (s.opcoes?.length ? s.opcoes : [{}]).map((o) => ({ ...o, pagamentos: (o.pagamentos || []).map((p) => ({ ...p, sel: true })) })),
     });
   }
@@ -162,7 +171,8 @@ export function avisosComparacao(dados) {
   const tipos = new Map(segs.map((s) => [s.nome, tipoFranquia(opcaoAtual(s).franquia)]));
   if (new Set([...tipos.values()].filter(Boolean)).size > 1)
     avisos.push("Tipos de franquia diferentes: " + [...tipos].filter(([, t]) => t).map(([n, t]) => `${n} ${t}`).join(", ") + ".");
-  const fipes = new Set(segs.map((s) => norm(opcaoAtual(s).fipe)).filter(Boolean));
+  // Compara só o percentual ou o valor: a descrição entre parênteses ("100% (COMPREENSIVA)") não é diferença de FIPE.
+  const fipes = new Set(segs.map((s) => norm(String(opcaoAtual(s).fipe || "").replace(/\s*\(.*$/, ""))).filter(Boolean));
   if (fipes.size > 1) avisos.push("O percentual da FIPE ou o valor determinado muda entre as seguradoras.");
   const semPreco = segs.filter((s) => isNaN(preco(s))).map((s) => s.nome);
   if (semPreco.length) avisos.push(`Sem preço total: ${semPreco.join(", ")}.`);

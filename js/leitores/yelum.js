@@ -58,7 +58,7 @@ export const yelum = {
     o.pagamentos = pagamentosYelum(doc, premio);
     const renova = /\d/.test(cel(bonus, 1));
     const antes = bonus ? datas([bonus.texto, doc.linhas[doc.linhas.indexOf(bonus) + 1]?.texto].join(" ")) : [];
-    const cia = sem(bonus?.texto || "").match(/\(\d+\)\s*([A-Z][A-Z ]+?)\s*(?:S\.A\.|\(|\s{2,}|$)/);
+    const cia = sem(bonus?.texto || "").match(/\(\d+\)\s*([A-Z][A-Z \/]+?)\s*(?:S\.A\.|\(|\s{2,}|$)/); // "BRADESCO AUTO/RE"
     const cepPdf = abaixo(doc, CAT, /CEP/i);
     return extracao({
       alertas: /^\d{5}-\d{3}$/.test(cepPdf) ? [] : [`O PDF traz o CEP de pernoite incompleto (${cepPdf}). Complete com o CEP do cliente.`],

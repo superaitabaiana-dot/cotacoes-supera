@@ -22,7 +22,7 @@ export const bradesco = {
     const vidroRet = (rx(doc, /Retrovisores:\s*([\d.,]+)/) || "0,00") !== "0,00";
     const o = opcao({
       nome: rx(doc, /Veículo:\s*(Valor de [^\n]+?)\s{2,}/i) || "Valor de mercado referenciado",
-      fipe: `${rx(doc, /Fator de Ajuste:\s*(\d+)/)}%`.replace(/^%$/, ""),
+      fipe: `${rx(doc, /(?:Fator de Ajuste|\(% FIPE\)):\s*(\d+)/)}%`.replace(/^%$/, ""), // os dois rótulos existem
       franquia: frq ? franquia(frq[1], frq[2]) : "",
       danos_materiais: R(rx(doc, /D\.M\.:\s*([\d.,]+)/)) || "NÃO CONTRATADO",
       danos_corporais: R(rx(doc, /D\.C\.:\s*([\d.,]+)/)) || "NÃO CONTRATADO",
@@ -217,7 +217,7 @@ export const zurich = {
       danos_corporais: R(l(/RCV - Danos Corporais/i)) || "NÃO CONTRATADO",
       danos_morais: R(l(/RCV - Danos Morais/i)) || "NÃO CONTRATADO",
       app: R(l(/^APP/)) ? `${R(l(/^APP/))} POR PASSAGEIRO` : "NÃO CONTRATADO",
-      guincho: guincho(l(/Km de Reboque/i) || clausulas.match(/ASSIST[^\n]*/i)?.[0]) || "NÃO CONTRATADO",
+      guincho: (guincho(l(/Km de Reboque/i) || clausulas.match(/ASSIST[^\n]*/i)?.[0]) || "NÃO CONTRATADO") + (/ilimitado para sinistro/i.test(l(/Km de Reboque/i)) ? " (ILIMITADO EM SINISTRO)" : ""),
       carro_reserva: carroReserva(clausulas.match(/CARRO RESERVA[^\n]*/i)?.[0]) || "NÃO",
       vidros: /VIDROS/i.test(clausulas) ? rotuloVidros(clausulas.match(/VIDROS[^\n]*/i)?.[0]) : "NÃO CONTRATADO",
       logo_marca: servico(doc.texto, /LOGOMARCA|LOGO MARCA/i),

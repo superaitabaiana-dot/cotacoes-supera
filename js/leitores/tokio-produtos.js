@@ -74,7 +74,7 @@ export const tokioProdutos = {
       const o = opcao({
         nome,
         fipe: temColisao ? fipeCol : fipeInc ? `${fipeInc} (SÓ INCÊNDIO E ROUBO/FURTO)` : "",
-        franquia: fr ? franquia(fr[1], fr[2]) : temColisao ? "" : "NÃO SE APLICA",
+        franquia: fr ? franquia(fr[1], fr[2]) : "",
         danos_materiais: lmi(dm[k]) || "NÃO CONTRATADO", danos_corporais: lmi(dc[k]) || "NÃO CONTRATADO", danos_morais: lmi(mo[k]) || "NÃO CONTRATADO",
         app: lmi(app[k]) ? `${lmi(app[k])} POR PASSAGEIRO` : "NÃO CONTRATADO",
         guincho: g ? (/Ilimitado/i.test(g) ? "SEM LIMITE DE KM" : up(g.replace(/^=\s*/, ""))) : "",
