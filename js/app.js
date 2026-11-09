@@ -26,7 +26,8 @@ function trocar(...filhos) { repor(tela, ...filhos); tela.focus({ preventScroll:
 function pagina(...filhos) { return el("div", { class: "pagina" }, ...filhos); }
 const ir = (h) => { location.hash = h; };
 
-window.addEventListener("beforeunload", (e) => { if (E?.sujo) { e.preventDefault(); e.returnValue = ""; } });
+let enviandoDrive = 0; // envios em andamento: fechar a aba agora deixaria arquivos de fora
+window.addEventListener("beforeunload", (e) => { if (E?.sujo || enviandoDrive) { e.preventDefault(); e.returnValue = ""; } });
 let hashAtual = location.hash;
 window.addEventListener("hashchange", () => {
   if (E?.sujo && !location.hash.startsWith("#/cotacao/" + (E.id || "x")) && !confirm("Há alterações nesta cotação que ainda não viraram documento. Sair mesmo assim?")) {
@@ -62,7 +63,7 @@ function montarBarra() {
   repor($("#quem"), 
     el("a", { href: "#/perfil", style: "color:inherit;text-decoration:none;text-align:right" },
       el("div", { class: "nome" }, eu.nome || eu.email), el("div", { class: "papel" }, eu.papel === "gestor" ? "Gestor" : "Consultor")),
-    el("button", { onclick: async () => { if (E?.sujo && !confirm("Sair sem gerar o documento?")) return; E = null; await api.sair(); ir("#/"); rotear(); } }, "Sair"));
+    el("button", { onclick: async () => { if (E?.sujo && !confirm("Sair sem gerar o documento?")) return; E = null; await api.sair(); if (location.hash === "#/") rotear(); else ir("#/"); } /* mudar o endereço já redesenha a tela: chamar rotear() de novo apagava o que fosse digitado no login */ }, "Sair"));
 }
 
 // ---------- Login e senha ----------
@@ -544,8 +545,8 @@ function focar(p) {
 }
 
 // ---------- Etapa 3: documento ----------
-function rodapeCtx(identificacao) {
-  const quem = E.dono?.nome ? E.dono : eu;
+function rodapeCtx(identificacao, cot = E) {
+  const quem = cot.dono?.nome ? cot.dono : eu;
   return { consultor: [quem.nome, fmtTel(quem.telefone)].filter(Boolean).join(" · "), whatsapp: cfg.whatsapp_supera || "", identificacao, base: "assets/" };
 }
 
@@ -615,49 +616,54 @@ async function etapaDocumento() {
 }
 
 async function salvarEBaixar() {
+  const cot = E; // o envio continua mesmo se o consultor for para outra tela (E vira null ao sair da cotação)
   const botao = $("#salvar"), passos = $("#passos");
   const passo = (t) => { const li = el("li", {}, el("span", { class: "estado ocupado" }), t); passos.append(li); return { ok: (x = "") => repor(li, el("span", { class: "ok" }, "✓"), t + x), falha: (m) => repor(li, el("span", { class: "falha" }, "!"), m) }; };
-  if (E.paginasFora.size && $$("#paginas .pagina-doc").length === E.paginasFora.size) return toast("Marque ao menos uma página para salvar.", true);
+  if (cot.paginasFora.size && $$("#paginas .pagina-doc").length === cot.paginasFora.size) return toast("Marque ao menos uma página para salvar.", true);
   botao.disabled = true; repor(passos, );
   try {
-    const d = E.dados, res = resumo(d);
+    const d = cot.dados, res = resumo(d);
     let p = passo("Registrando a cotação");
-    if (!E.id) {
+    if (!cot.id) {
       const c = await api.criarCotacao({ fonte: d.fonte, cliente: res.cliente, placa: res.placa, veiculo: res.veiculo });
-      E.id = c.id; E.codigo = c.codigo; hashAtual = "#/cotacao/" + c.id; history.replaceState(null, "", hashAtual);
+      cot.id = c.id; cot.codigo = c.codigo;
+      if (E === cot) { hashAtual = "#/cotacao/" + c.id; history.replaceState(null, "", hashAtual); }
     }
     // PDFs lidos nesta sessão: grava o texto ocultado e troca o id provisório pelo id do banco.
-    for (const a of E.arquivos.filter((x) => x.estado === "pronto" && !x.salvo)) {
-      const novoId = await api.salvarFonte(E.id, { arquivo_nome: a.nome, texto: E.textos.get(a.id), extracao: a.extracao });
+    for (const a of cot.arquivos.filter((x) => x.estado === "pronto" && !x.salvo)) {
+      const novoId = await api.salvarFonte(cot.id, { arquivo_nome: a.nome, texto: cot.textos.get(a.id), extracao: a.extracao });
       for (const f of d.fontes) if (f.id === a.id) f.id = novoId;
       for (const s of d.seguradoras) if (s.fonte_id === a.id) s.fonte_id = novoId;
-      E.textos.set(novoId, E.textos.get(a.id)); E.textos.delete(a.id);
+      cot.textos.set(novoId, cot.textos.get(a.id)); cot.textos.delete(a.id);
       a.id = novoId; a.salvo = true; a.estado = "salvo";
     }
-    const numero = await api.salvarVersao(E.id, d, res);
-    p.ok(` (${E.codigo}, versão ${numero})`);
+    const numero = await api.salvarVersao(cot.id, d, res);
+    p.ok(` (${cot.codigo}, versão ${numero})`);
 
     p = passo("Gerando o PDF final");
-    const { blob } = await gerarDocumento(d, { ...rodapeCtx(`${E.codigo} · versão ${numero} · emitido em ${fmtDate(hoje())}`), omitir: E.paginasFora });
-    const nome = nomeArquivo(d, E.codigo, numero);
+    const { blob } = await gerarDocumento(d, { ...rodapeCtx(`${cot.codigo} · versão ${numero} · emitido em ${fmtDate(hoje())}`, cot), omitir: cot.paginasFora });
+    const nome = nomeArquivo(d, cot.codigo, numero);
     baixar(blob, nome); p.ok(" e baixado");
-    E.sujo = false;
+    cot.sujo = false;
 
     if (await api.driveStatus()) {
       p = passo("Enviando ao Drive da Supera");
+      const aviso = el("li", { class: "mut" }, "Pode continuar usando o sistema, mas não feche esta aba até o envio terminar.");
+      passos.append(aviso); enviandoDrive++;
       try {
-        const r = await api.driveEnviar({ cotacao_id: E.id, versao: numero, tipo: "documento", nome_arquivo: nome, base64: await blobParaBase64(blob) });
-        for (const a of E.arquivos.filter((x) => x.file && !x.noDrive)) {
-          await api.driveEnviar({ cotacao_id: E.id, tipo: "original", fonte_id: a.id, nome_arquivo: a.nome, base64: await blobParaBase64(a.file) });
+        const r = await api.driveEnviar({ cotacao_id: cot.id, versao: numero, tipo: "documento", nome_arquivo: nome, base64: await blobParaBase64(blob) });
+        for (const a of cot.arquivos.filter((x) => x.file && !x.noDrive)) {
+          await api.driveEnviar({ cotacao_id: cot.id, tipo: "original", fonte_id: a.id, nome_arquivo: a.nome, base64: await blobParaBase64(a.file) });
           a.noDrive = true;
         }
-        E.pastaUrl = r.pasta_url || E.pastaUrl;
+        cot.pastaUrl = r.pasta_url || cot.pastaUrl;
         p.ok("");
-        if (E.pastaUrl) passos.append(el("li", {}, el("a", { href: E.pastaUrl, target: "_blank", rel: "noopener" }, "Abrir a pasta da cotação no Drive")));
-      } catch (x) { p.falha(x.message); }
+        if (cot.pastaUrl) passos.append(el("li", {}, el("a", { href: cot.pastaUrl, target: "_blank", rel: "noopener" }, "Abrir a pasta da cotação no Drive")));
+      } catch (x) { p.falha(x.message); if (E !== cot) toast(`Drive (${cot.codigo}): ${x.message}`, true); }
+      finally { enviandoDrive--; aviso.remove(); }
     } else passos.append(el("li", { class: "mut" }, "O Drive ainda não está configurado; o PDF ficou salvo no sistema e no seu computador."));
 
-    const r = await api.abrirCotacao(E.id); E.versoes = r.versoes;
+    const r = await api.abrirCotacao(cot.id); cot.versoes = r.versoes;
     toast(`Versão ${numero} salva`);
     salvarRotulo();
   } catch (x) { console.error(x); toast(x.message || "Não foi possível salvar.", true); passos.append(el("li", { style: "color:var(--bad)" }, x.message)); }
