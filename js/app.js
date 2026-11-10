@@ -15,6 +15,8 @@ import { validar } from "./validacao.js";
 const api = await criarApi();
 const tela = $("#tela");
 let eu = null, cfg = {};
+// Cada ida ao servidor custa ~0,25 s (Supabase em us-west-2 visto do Brasil). O que muda pouco fica guardado na sessão.
+let consultoresCache = null, driveLigado = null;
 let E = null; // cotação aberta
 
 // ---------- Infra de tela ----------
@@ -40,11 +42,12 @@ async function rotear() {
   $("#avisoDemo").hidden = !api.demo;
   let sess;
   try { sess = await api.sessao(); } catch { sess = null; }
-  if (!sess) { $("#barra").hidden = true; return telaLogin(); }
-  eu = await api.perfil().catch(() => null);
-  if (!eu || !eu.ativo) { await api.sair(); $("#barra").hidden = true; return telaLogin("Seu acesso está desativado. Fale com o gestor."); }
+  if (!sess) { eu = null; consultoresCache = null; driveLigado = null; $("#barra").hidden = true; return telaLogin(); }
+  // Perfil e configurações: lidos juntos uma vez por sessão, não a cada clique. Recarregam ao entrar, ao trocar de
+  // usuário e nas telas que os alteram (Perfil, WhatsApp da Supera, troca de senha).
+  if (!eu || eu.id !== sess.id) [eu, cfg] = await Promise.all([api.perfil().catch(() => null), api.config().catch(() => ({}))]);
+  if (!eu || !eu.ativo) { eu = null; await api.sair(); $("#barra").hidden = true; return telaLogin("Seu acesso está desativado. Fale com o gestor."); }
   if (eu.trocar_senha) { $("#barra").hidden = true; return telaSenha(true); }
-  cfg = await api.config().catch(() => ({}));
   montarBarra();
   const [, rota = "cotacoes", arg] = location.hash.replace(/^#/, "").split("/");
   if (rota !== "cotacao" && rota !== "nova") E = null;
@@ -102,7 +105,7 @@ function telaSenha(obrigatoria) {
     e.preventDefault(); erro.textContent = "";
     if (a.value.length < 10) return (erro.textContent = "Use pelo menos 10 caracteres.");
     if (a.value !== b.value) return (erro.textContent = "As duas senhas não são iguais.");
-    try { await api.trocarSenha(a.value); toast("Senha alterada"); if (obrigatoria) rotear(); else { a.value = b.value = ""; } } catch (x) { erro.textContent = x.message; }
+    try { await api.trocarSenha(a.value); toast("Senha alterada"); if (obrigatoria) { eu = null; rotear(); } else { a.value = b.value = ""; } } catch (x) { erro.textContent = x.message; }
   } },
     el("h2", {}, obrigatoria ? "Crie sua senha" : "Trocar senha"),
     obrigatoria ? el("p", { class: "mut" }, "Você entrou com uma senha temporária. Escolha uma senha só sua para continuar.") : null,
@@ -136,14 +139,20 @@ function telaPerfil() {
 // ---------- Lista de cotações ----------
 async function telaLista() {
   const busca = el("input", { id: "busca", type: "search", placeholder: "Cliente, placa ou código" });
-  let consultor = null, usuarios = [];
+  let consultor = null;
   if (eu.papel === "gestor") {
-    usuarios = (await api.usuarios("listar").catch(() => ({ usuarios: [] }))).usuarios;
+    // A lista de consultores serve só ao filtro: carrega em paralelo, fica guardada na sessão e não segura a tela.
+    const usuarios = [];
+    (consultoresCache ||= api.usuarios("listar").then((r) => r.usuarios || []).catch(() => { consultoresCache = null; return []; }))
+      .then((us) => consultor.append(...us.map((u) => el("option", { value: u.id }, u.nome || u.email))));
     consultor = el("select", { id: "f_consultor", "aria-label": "Consultor" }, el("option", { value: "" }, "Todos os consultores"), ...usuarios.map((u) => el("option", { value: u.id }, u.nome || u.email)));
   }
   const corpo = el("div");
+  let pedido = 0;
   const carregar = async () => {
-    const lista = await api.listarCotacoes({ busca: busca.value, consultor: consultor?.value || "" }).catch((x) => { toast(x.message, true); return []; });
+    const meu = ++pedido;
+    const lista = await api.listarCotacoes({ busca: busca.value.trim(), consultor: consultor?.value || "" }).catch((x) => { toast(x.message, true); return []; });
+    if (meu !== pedido) return; // resposta de uma busca anterior que chegou atrasada: descarta
     if (!lista.length) {
       repor(corpo, el("div", { class: "painel vazio" },
         el("img", { src: "assets/icone.png", alt: "" }),
@@ -167,14 +176,16 @@ async function telaLista() {
           el("td", { "data-r": "Drive" }, c.drive_pasta_url ? el("a", { href: c.drive_pasta_url, target: "_blank", rel: "noopener" }, "Abrir pasta") : el("span", { class: "mut" }, "—")));
       })))));
   };
-  let t = null;
-  busca.addEventListener("input", () => { clearTimeout(t); t = setTimeout(carregar, 250); });
+  // Busca pelo botão ou Enter; ao apagar o campo (ou clicar no "x"), volta a lista completa.
+  busca.addEventListener("input", () => { if (!busca.value.trim()) carregar(); });
   consultor?.addEventListener("change", carregar);
+  const filtros = el("form", { class: "filtros", role: "search", onsubmit: (e) => { e.preventDefault(); carregar(); } },
+    busca, el("button", { type: "submit", class: "primario", id: "buscar" }, "Buscar"), consultor);
   trocar(pagina(
     el("div", { class: "topo" },
       el("div", {}, el("h1", {}, "Cotações"), el("p", { class: "sub" }, eu.papel === "gestor" ? "Todas as cotações da equipe." : "Suas cotações emitidas.")),
       el("a", { class: "botao primario", href: "#/nova" }, "Nova cotação")),
-    el("div", { class: "filtros" }, busca, consultor), corpo));
+    filtros, corpo));
   await carregar();
 }
 
@@ -630,8 +641,11 @@ async function salvarEBaixar() {
       if (E === cot) { hashAtual = "#/cotacao/" + c.id; history.replaceState(null, "", hashAtual); }
     }
     // PDFs lidos nesta sessão: grava o texto ocultado e troca o id provisório pelo id do banco.
-    for (const a of cot.arquivos.filter((x) => x.estado === "pronto" && !x.salvo)) {
-      const novoId = await api.salvarFonte(cot.id, { arquivo_nome: a.nome, texto: cot.textos.get(a.id), extracao: a.extracao });
+    // Em paralelo: em fila, cada PDF somava uma ida ao servidor.
+    const novas = cot.arquivos.filter((x) => x.estado === "pronto" && !x.salvo);
+    const ids = await Promise.all(novas.map((a) => api.salvarFonte(cot.id, { arquivo_nome: a.nome, texto: cot.textos.get(a.id), extracao: a.extracao })));
+    for (const [i, a] of novas.entries()) {
+      const novoId = ids[i];
       for (const f of d.fontes) if (f.id === a.id) f.id = novoId;
       for (const s of d.seguradoras) if (s.fonte_id === a.id) s.fonte_id = novoId;
       cot.textos.set(novoId, cot.textos.get(a.id)); cot.textos.delete(a.id);
@@ -646,16 +660,17 @@ async function salvarEBaixar() {
     baixar(blob, nome); p.ok(" e baixado");
     cot.sujo = false;
 
-    if (await api.driveStatus()) {
+    if (driveLigado ??= await api.driveStatus()) {
       p = passo("Enviando ao Drive da Supera");
       const aviso = el("li", { class: "mut" }, "Pode continuar usando o sistema, mas não feche esta aba até o envio terminar.");
       passos.append(aviso); enviandoDrive++;
       try {
         const r = await api.driveEnviar({ cotacao_id: cot.id, versao: numero, tipo: "documento", nome_arquivo: nome, base64: await blobParaBase64(blob) });
-        for (const a of cot.arquivos.filter((x) => x.file && !x.noDrive)) {
+        // Originais: três por vez (o documento vai antes, porque é ele que cria a pasta da cotação).
+        await emParalelo(cot.arquivos.filter((x) => x.file && !x.noDrive), 3, async (a) => {
           await api.driveEnviar({ cotacao_id: cot.id, tipo: "original", fonte_id: a.id, nome_arquivo: a.nome, base64: await blobParaBase64(a.file) });
           a.noDrive = true;
-        }
+        });
         cot.pastaUrl = r.pasta_url || cot.pastaUrl;
         p.ok("");
         if (cot.pastaUrl) passos.append(el("li", {}, el("a", { href: cot.pastaUrl, target: "_blank", rel: "noopener" }, "Abrir a pasta da cotação no Drive")));
@@ -663,11 +678,16 @@ async function salvarEBaixar() {
       finally { enviandoDrive--; aviso.remove(); }
     } else passos.append(el("li", { class: "mut" }, "O Drive ainda não está configurado; o PDF ficou salvo no sistema e no seu computador."));
 
-    const r = await api.abrirCotacao(cot.id); cot.versoes = r.versoes;
+    cot.versoes = await api.versoes(cot.id);
     toast(`Versão ${numero} salva`);
     salvarRotulo();
   } catch (x) { console.error(x); toast(x.message || "Não foi possível salvar.", true); passos.append(el("li", { style: "color:var(--bad)" }, x.message)); }
   botao.disabled = false;
+}
+/** Executa `fn` em até `n` itens ao mesmo tempo; o primeiro erro interrompe. */
+async function emParalelo(itens, n, fn) {
+  const fila = [...itens];
+  await Promise.all(Array.from({ length: Math.min(n, fila.length) }, async () => { while (fila.length) await fn(fila.shift()); }));
 }
 function salvarRotulo() { const b = $("#salvar"); if (b) b.textContent = "Salvar nova versão e baixar"; }
 
@@ -699,6 +719,7 @@ async function telaEquipe() {
       el("p", { class: "mut", style: "font-size:13px;margin-top:10px" }, "Quando aparecer “Layout pode ter mudado”, envie um PDF recente dessa seguradora para ajustar o leitor."));
   };
   const carregar = async () => {
+    consultoresCache = null; // a equipe pode ter mudado: o filtro da lista recarrega na próxima visita
     const { usuarios } = await api.usuarios("listar").catch((x) => { toast(x.message, true); return { usuarios: [] }; });
     repor(lista, el("div", { class: "tabela-env" }, el("table", { class: "lista" },
       el("thead", {}, el("tr", {}, el("th", {}, "Pessoa"), el("th", {}, "Papel"), el("th", {}, "Situação"), el("th", {}, "Último acesso"), el("th", {}, ""))),

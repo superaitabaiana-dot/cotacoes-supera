@@ -52,7 +52,10 @@ function apiSupabase(sb) {
     async listarCotacoes({ busca = "", consultor = "" } = {}) {
       let q = sb.from("cotacoes_lista").select("*").order("atualizado_em", { ascending: false }).limit(200);
       if (consultor) q = q.eq("consultor_id", consultor);
-      if (busca) { const b = busca.replace(/[%,()]/g, " ").trim(); q = q.or(`cliente.ilike.%${b}%,placa.ilike.%${b}%,codigo.ilike.%${b}%`); }
+      if (busca) {
+        const b = busca.replace(/[%,()]/g, " ").trim(), placa = b.replace(/[^A-Za-z0-9]/g, ""); // "ABC-1D23" acha "ABC1D23"
+        q = q.or(`cliente.ilike.%${b}%,codigo.ilike.%${b}%` + (placa ? `,placa.ilike.%${placa}%` : ""));
+      }
       return ok(await q);
     },
     async criarCotacao(campos) { return ok(await sb.from("cotacoes").insert(campos).select("id,codigo,consultor_id").single()); },
@@ -61,11 +64,20 @@ function apiSupabase(sb) {
     },
     async salvarVersao(cotacao_id, dados, resumo) { return ok(await sb.rpc("salvar_versao", { p_cotacao: cotacao_id, p_dados: dados, p_resumo: resumo })); },
     async abrirCotacao(id) {
-      const cot = ok(await sb.from("cotacoes_lista").select("*").eq("id", id).single(), "Cotação não encontrada.");
-      const versoes = ok(await sb.from("cotacao_versoes").select("numero,dados,criado_em,drive_arquivo_url").eq("cotacao_id", id).order("numero", { ascending: false }));
-      const fontes = ok(await sb.from("cotacao_fontes").select("id,arquivo_nome,texto_mascarado").eq("cotacao_id", id));
+      // Consultas em paralelo; só a última versão vem com os dados completos (as outras servem à lista de versões).
+      const [rc, rv, ru, rf] = await Promise.all([
+        sb.from("cotacoes_lista").select("*").eq("id", id).single(),
+        sb.from("cotacao_versoes").select("numero,criado_em,drive_arquivo_url").eq("cotacao_id", id).order("numero", { ascending: false }),
+        sb.from("cotacao_versoes").select("numero,dados").eq("cotacao_id", id).order("numero", { ascending: false }).limit(1).maybeSingle(),
+        sb.from("cotacao_fontes").select("id,arquivo_nome,texto_mascarado").eq("cotacao_id", id),
+      ]);
+      const cot = ok(rc, "Cotação não encontrada."), versoes = ok(rv), ultima = ok(ru), fontes = ok(rf);
+      if (versoes[0] && ultima) versoes[0].dados = ultima.dados;
       const dono = ok(await sb.from("perfis").select("nome,telefone").eq("id", cot.consultor_id).maybeSingle());
       return { cot, versoes, fontes, dono };
+    },
+    async versoes(id) {
+      return ok(await sb.from("cotacao_versoes").select("numero,criado_em,drive_arquivo_url").eq("cotacao_id", id).order("numero", { ascending: false }));
     },
     async driveStatus() { try { return (await funcao("drive", { acao: "status" })).configurado; } catch { return false; } },
     async driveEnviar(corpo) { return funcao("drive", { acao: "enviar", ...corpo }); },

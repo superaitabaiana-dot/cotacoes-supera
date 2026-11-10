@@ -54,7 +54,7 @@ export function criarApiDemo() {
   const visivel = (c) => eu()?.papel === "gestor" || c.consultor_id === db.sessao;
   const semSenha = ({ senha, ...u }) => u;
 
-  return {
+  const api = {
     demo: true,
     async sessao() { return eu() ? { id: db.sessao } : null; },
     async entrar(email, senha) {
@@ -82,7 +82,7 @@ export function criarApiDemo() {
     async listarCotacoes({ busca = "", consultor = "" } = {}) {
       const b = busca.toLowerCase();
       return db.cotacoes.filter(visivel).filter((c) => !consultor || c.consultor_id === consultor)
-        .filter((c) => !b || [c.cliente, c.placa, c.codigo].some((v) => String(v).toLowerCase().includes(b)))
+        .filter((c) => !b || [c.cliente, c.codigo].some((v) => String(v).toLowerCase().includes(b)) || String(c.placa).toLowerCase().includes(b.replace(/[^a-z0-9]/g, "")))
         .map((c) => {
           const v = db.versoes.find((x) => x.cotacao_id === c.id && x.numero === c.versao_atual);
           return { ...c, consultor_nome: db.usuarios.find((u) => u.id === c.consultor_id)?.nome, resumo: v?.resumo, drive_arquivo_url: v?.drive_arquivo_url };
@@ -100,6 +100,7 @@ export function criarApiDemo() {
       db.versoes.push({ cotacao_id, numero: c.versao_atual, dados, resumo, criado_em: new Date().toISOString(), drive_arquivo_url: null });
       salvar(); return c.versao_atual;
     },
+    async versoes(id) { return db.versoes.filter((v) => v.cotacao_id === id).sort((a, b) => b.numero - a.numero).map(({ numero, criado_em, drive_arquivo_url }) => ({ numero, criado_em, drive_arquivo_url })); },
     async abrirCotacao(id) {
       const c = db.cotacoes.find((x) => x.id === id && visivel(x));
       if (!c) throw new ErroApi("sem_acesso", "Cotação não encontrada.");
@@ -141,4 +142,8 @@ export function criarApiDemo() {
     async registrarLeitura(reg) { (db.leituras ||= []).unshift({ ...reg, criado_em: new Date().toISOString() }); salvar(); },
     async leituras() { return db.leituras || []; },
   };
+  // ?latencia=250 simula o atraso de cada ida ao servidor (Supabase em us-west-2 visto do Brasil: ~0,25 s), para medir telas.
+  const atraso = Number(new URLSearchParams(location.search).get("latencia")) || 0;
+  if (atraso) for (const [k, f] of Object.entries(api)) if (typeof f === "function") api[k] = async (...a) => { await espera(atraso); return f.apply(api, a); };
+  return api;
 }
