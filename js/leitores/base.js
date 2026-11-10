@@ -116,13 +116,17 @@ export function tokensComX(linha, re) {
  * Valor embaixo de um rótulo, em quadros "rótulos numa linha, valores na seguinte", alinhados à esquerda.
  * Cada palavra da linha de valores vai para o último rótulo que começa à esquerda dela, então o resultado não
  * depende de como as células foram separadas (o OCR às vezes funde "2202   49037" numa célula só).
+ * Com `linhas` > 1, junta as linhas seguintes até `ate`: um valor longo pode quebrar em duas linhas, e a primeira
+ * pode até ficar acima da linha dos outros valores ("Casado(a) ou vive em união" / nome / "estável").
  * @param reCab linha de rótulos; @param reRotulo rótulo da coluna desejada
  */
-export function abaixo(doc, reCab, reRotulo) {
+export function abaixo(doc, reCab, reRotulo, { linhas = 1, ate = null } = {}) {
   const i = achar(doc, reCab); if (i < 0 || !doc.linhas[i + 1]) return "";
   const cab = doc.linhas[i].celulas, k = cab.findIndex((c) => reRotulo.test(c.s)); if (k < 0) return "";
   const out = [];
-  for (const c of doc.linhas[i + 1].celulas) {
+  const valores = [];
+  for (let j = i + 1; j <= i + linhas && doc.linhas[j]; j++) { if (ate && ate.test(doc.linhas[j].texto)) break; valores.push(...doc.linhas[j].celulas); }
+  for (const c of valores) {
     const larg = (c.x2 - c.x) / Math.max(1, c.s.length);
     for (const m of c.s.matchAll(/\S+/g)) {
       const x = c.x + larg * m.index; let col = 0;

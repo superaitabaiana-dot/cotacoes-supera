@@ -1,7 +1,7 @@
 // Tokio Marine, formato com vários produtos lado a lado ("Escolha o produto ideal": Auto, Auto Clássico,
 // Auto Proteção Mensal, Auto Roubo). Cada produto vira uma opção. Os quadros têm uma coluna por produto; cada valor
 // vai para o produto de centro mais próximo (funciona com texto do PDF e com o OCR, que funde células vizinhas).
-import { R, achar, carroReserva, cep, data, datas, estadoCivil, extracao, franquia, maisProximo, opcao, pct, placa, resumirPagamentos, rotuloVidros, rx, simNao, tipoSeguro, tokensComX, up, usoVeiculo } from "./base.js";
+import { R, abaixo, achar, carroReserva, cep, data, datas, estadoCivil, extracao, franquia, maisProximo, opcao, pct, placa, resumirPagamentos, rotuloVidros, rx, simNao, tipoSeguro, tokensComX, up, usoVeiculo } from "./base.js";
 
 const TOK = /Não contratada|Não Possui|Não Disponível|Indisponível|Sem Juros|R\$\s*[\d.]+,\d{2}(?:\s*\([^)]*\))?|[\d.]+,\d{2}%?|Ajuste\s*-\s*[\d,]+%|=\s*(?:Ilimitado|\d+\s*KM)|\d+\s*diárias[^|]*?(?=\s{2,}|$)|Completo|Completa|VIP/gi;
 
@@ -87,8 +87,11 @@ export const tokioProdutos = {
       return o;
     });
 
-    const iProp = achar(doc, /^Proponente\s+CPF/i); const prop = iProp >= 0 ? doc.linhas[iProp + 1] : null;
-    const segurado = up(prop?.celulas[0]?.s);
+    // Quadro do proponente: cada valor pela posição embaixo do rótulo. O estado civil pode quebrar em duas linhas, e a
+    // primeira fica acima da linha do nome; por isso junta as linhas até "Nome Social".
+    const PROP = /^Proponente\s+CPF/i, OPC = { linhas: 4, ate: /^(Nome Social|Deseja|Tipo Seguro)/i };
+    const segurado = up(abaixo(doc, PROP, /^Proponente$/i, OPC));
+    const principal = abaixo(doc, PROP, /^Principal Condutor/i, OPC);
     const iVei = achar(doc, /^Tipo Seguro\s+Vigência/i); const vei = iVei >= 0 ? doc.linhas[iVei + 1] : null;
     const iFab = achar(doc, /^Fabricante\s+Veículo/i);
     const iRen = achar(doc, /^Nome da Congênere/i); const ren = iRen >= 0 ? doc.linhas[iRen + 1] : null;
@@ -96,8 +99,8 @@ export const tokioProdutos = {
     const iMenor = achar(doc, /faixa etária de 18 a 25 anos/i);
     const vig = datas(rx(doc, /Vigência:\s*([^|\n]+)/));
     return extracao({
-      segurado, condutor: /Próprio Segurado/i.test(prop?.texto || "") ? segurado : up(prop?.celulas[2]?.s),
-      estado_civil: estadoCivil(prop?.celulas.slice(3).map((c) => c.s).join(" ")),
+      segurado, condutor: /Próprio Segurado/i.test(principal) ? segurado : up(principal),
+      estado_civil: estadoCivil(abaixo(doc, PROP, /^Estado Civil/i, OPC)),
       cep: cep(doc.texto.slice(doc.texto.search(/CEP de pernoite/i))),
       uso: usoVeiculo(iUso >= 0 ? doc.linhas[iUso + 1]?.celulas[0]?.s : ""),
       tipo: tipoSeguro(vei?.celulas[0]?.s),
