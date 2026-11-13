@@ -530,9 +530,10 @@ function colunaAtiva() {
   const env = $("#mesaEnv"); if (!env) return null;
   if (env.scrollWidth <= env.clientWidth + 1) return null; // todas cabem na tela: nenhuma em destaque
   if (alvoSeg && env.scrollLeft >= env.scrollWidth - env.clientWidth - 2) return alvoSeg; // no fim da rolagem vale a escolhida
-  const fixa = env.querySelector("thead th.rot")?.offsetWidth || 0;
+  // Posições medidas na tela (não com offsetLeft, que nas células fixas é relativo à página e não à mesa)
+  const limite = env.querySelector("thead th.rot").getBoundingClientRect().right + 40;
   const ths = [...env.querySelectorAll("thead th[data-seg]")];
-  return (ths.find((th) => th.offsetLeft + th.offsetWidth - env.scrollLeft > fixa + 40) || ths[0])?.dataset.seg || null;
+  return (ths.find((th) => th.getBoundingClientRect().right > limite) || ths[0])?.dataset.seg || null;
 }
 function marcarAtiva() {
   const id = colunaAtiva();
@@ -541,8 +542,9 @@ function marcarAtiva() {
 function irPara(id) {
   const env = $("#mesaEnv"), th = env?.querySelector(`thead th[data-seg="${id}"]`); if (!th) return;
   alvoSeg = id;
-  const fixa = env.querySelector("thead th.rot")?.offsetWidth || 0;
-  env.scrollTo({ left: Math.max(0, th.offsetLeft - fixa), behavior: semMovimento() ? "auto" : "smooth" });
+  // Quanto falta para a coluna encostar na borda direita da coluna fixa das coberturas
+  const desloca = th.getBoundingClientRect().left - env.querySelector("thead th.rot").getBoundingClientRect().right;
+  env.scrollTo({ left: Math.max(0, env.scrollLeft + desloca), behavior: semMovimento() ? "auto" : "smooth" });
   const celulas = [th, ...env.querySelectorAll(`td[data-onde="${id}"]`)];
   celulas.forEach((c) => { c.classList.remove("destaque"); void c.offsetWidth; c.classList.add("destaque"); });
 }
