@@ -186,11 +186,31 @@ table.lista{width:100%;border-collapse:collapse;font-size:14px}
 @media (max-width:1100px){.lateral{position:static}}
 
 /* Mesa de comparação: uma coluna por seguradora */
-.mesa-env{overflow-x:auto;margin-inline:-20px;padding-inline:20px}
+/* A mesa cabe na janela, como planilha: rolagem própria, barra horizontal sempre à vista,
+   cabeçalho das seguradoras e coluna das coberturas fixos. Sem margem interna lateral,
+   para nada rolar visível à esquerda da coluna fixa. */
+.mesa-env{overflow:auto;max-height:calc(100vh - 150px);min-height:320px;border:1px solid var(--line);border-radius:var(--r)}
+@media (max-width:720px){.mesa-env{max-height:72vh}}
+.mesa td.destaque,.mesa th.destaque{animation:destaque 1.4s ease-out}
+@keyframes destaque{0%,35%{background:color-mix(in srgb,var(--sky) 22%,var(--surface))}100%{background:var(--surface)}}
+@media (prefers-reduced-motion:reduce){.mesa td.destaque,.mesa th.destaque{animation:none}}
+
+/* Atalhos para cada seguradora: nome, preço e ponto de pendência; marca a que está na tela */
+.atalhos{display:flex;align-items:stretch;gap:6px;margin-bottom:10px}
+.atalhos .lista{display:flex;gap:6px;overflow-x:auto;flex:1;min-width:0;scrollbar-width:thin;padding-bottom:2px}
+.atalhos .seta{flex:none;width:36px;padding:0;justify-content:center;font-size:22px;line-height:1;color:var(--ink)}
+.atalhos .ir{flex:none;flex-direction:column;align-items:flex-start;gap:1px;padding:6px 12px 7px;border-color:var(--line);background:var(--surface);text-align:left}
+.atalhos .ir .nome{display:flex;align-items:center;gap:6px;font-family:var(--font-display);font-size:16px;font-weight:700;color:var(--fg)}
+.atalhos .ir .valor{font-size:12.5px;font-weight:500;color:var(--muted)}
+.atalhos .ir .ponto{width:8px;height:8px;border-radius:50%;background:var(--warn-line)}
+.atalhos .ir .ponto.divergente{background:var(--bad)}
+.atalhos .ir .marca-rec{color:var(--sky);font-size:14px}
+.atalhos .ir.fora{opacity:.5}
+.atalhos .ir[aria-current="true"]{border-color:var(--ink);background:color-mix(in srgb,var(--ink) 7%,var(--surface));box-shadow:inset 0 -2px 0 var(--ink)}
 table.mesa{border-collapse:separate;border-spacing:0;min-width:100%;font-size:14px}
 .mesa th,.mesa td{padding:6px 8px;vertical-align:top;border-bottom:1px solid var(--line)}
 .mesa thead th{position:sticky;top:0;background:var(--surface);z-index:1;border-bottom:2px solid var(--line-2);text-align:left;min-width:210px}
-.mesa th.rot{position:sticky;left:0;z-index:2;background:var(--surface);min-width:150px;max-width:170px;text-align:left;font-size:13px;font-weight:600;color:var(--muted);padding-top:13px}
+.mesa th.rot{position:sticky;left:0;z-index:2;background:var(--surface);box-shadow:inset -1px 0 0 var(--line-2),6px 0 8px -6px rgba(11,46,131,.18);min-width:150px;max-width:170px;text-align:left;font-size:13px;font-weight:600;color:var(--muted);padding-top:13px}
 .mesa thead th.rot{z-index:3}
 .mesa th.rot .igual{display:block;font-weight:500;font-size:11.5px;color:var(--ok)}
 .mesa .cab-seg{display:flex;flex-direction:column;gap:6px;padding-block:4px}
@@ -283,7 +303,6 @@ table.mesa{border-collapse:separate;border-spacing:0;min-width:100%;font-size:14
   .nav{order:3;flex-basis:100%;flex-wrap:nowrap;overflow-x:auto;margin-inline:-8px}
   h1{font-size:26px}
   .painel{padding:16px}
-  .mesa-env{margin-inline:-16px;padding-inline:16px}
 }
 
 /* Leitura pelo Claude (reserva sem leitor automático) */

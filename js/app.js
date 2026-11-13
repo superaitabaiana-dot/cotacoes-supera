@@ -468,8 +468,9 @@ function painelMesa(d) {
   return el("section", { class: "painel" },
     el("div", { class: "painel-cab" }, el("h2", {}, "Seguradoras lado a lado"),
       el("span", { class: "mut", style: "font-size:13px" }, "Edite qualquer valor. Linhas marcadas como iguais vão para o quadro “Iguais em todas”.")),
-    el("div", { class: "mesa-env" }, el("table", { class: "mesa", id: "mesa" },
-      el("thead", {}, el("tr", {}, el("th", { class: "rot", scope: "col" }, "Cobertura"), ...segs.map((s) => el("th", { scope: "col", class: (s.incluir ? "" : "fora ") + (s.id === d.recomendada ? "rec" : "") },
+    segs.length > 1 ? el("nav", { class: "atalhos", id: "atalhos", "aria-label": "Ir para a seguradora" }) : null,
+    el("div", { class: "mesa-env", id: "mesaEnv", onscroll: () => requestAnimationFrame(marcarAtiva) }, el("table", { class: "mesa", id: "mesa" },
+      el("thead", {}, el("tr", {}, el("th", { class: "rot", scope: "col" }, "Cobertura"), ...segs.map((s) => el("th", { scope: "col", "data-seg": s.id, class: (s.incluir ? "" : "fora ") + (s.id === d.recomendada ? "rec" : "") },
         el("div", { class: "cab-seg" },
           el("span", { class: "nomeseg" }, s.nome),
           el("span", { class: "origem" }, fonteNome(s)),
@@ -514,7 +515,60 @@ function editar(alvo, mudou) {
 }
 function marcarSujo(redesenhar) {
   E.sujo = true;
-  if (redesenhar) { const y = window.scrollY; etapaConferencia(); window.scrollTo(0, y); } else atualizar();
+  if (redesenhar) {
+    const y = window.scrollY, x = $("#mesaEnv")?.scrollLeft || 0, yMesa = $("#mesaEnv")?.scrollTop || 0;
+    etapaConferencia(); window.scrollTo(0, y);
+    const env = $("#mesaEnv"); if (env) { env.scrollLeft = x; env.scrollTop = yMesa; }
+  } else atualizar();
+}
+
+// ---------- Trilho de seguradoras: atalhos para cada coluna da mesa ----------
+const semMovimento = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+/** Seguradora cuja coluna está à vista (a primeira que passa da coluna fixa das coberturas). */
+let alvoSeg = null; // última seguradora escolhida nos atalhos
+function colunaAtiva() {
+  const env = $("#mesaEnv"); if (!env) return null;
+  if (env.scrollWidth <= env.clientWidth + 1) return null; // todas cabem na tela: nenhuma em destaque
+  if (alvoSeg && env.scrollLeft >= env.scrollWidth - env.clientWidth - 2) return alvoSeg; // no fim da rolagem vale a escolhida
+  const fixa = env.querySelector("thead th.rot")?.offsetWidth || 0;
+  const ths = [...env.querySelectorAll("thead th[data-seg]")];
+  return (ths.find((th) => th.offsetLeft + th.offsetWidth - env.scrollLeft > fixa + 40) || ths[0])?.dataset.seg || null;
+}
+function marcarAtiva() {
+  const id = colunaAtiva();
+  $$("#atalhos .ir").forEach((b) => b.setAttribute("aria-current", String(b.dataset.seg === id)));
+}
+function irPara(id) {
+  const env = $("#mesaEnv"), th = env?.querySelector(`thead th[data-seg="${id}"]`); if (!th) return;
+  alvoSeg = id;
+  const fixa = env.querySelector("thead th.rot")?.offsetWidth || 0;
+  env.scrollTo({ left: Math.max(0, th.offsetLeft - fixa), behavior: semMovimento() ? "auto" : "smooth" });
+  const celulas = [th, ...env.querySelectorAll(`td[data-onde="${id}"]`)];
+  celulas.forEach((c) => { c.classList.remove("destaque"); void c.offsetWidth; c.classList.add("destaque"); });
+}
+function passo(delta) {
+  const ids = E.dados.seguradoras.map((s) => s.id), i = ids.indexOf(colunaAtiva());
+  const alvo = ids[Math.min(ids.length - 1, Math.max(0, i + delta))]; if (alvo) irPara(alvo);
+}
+/** Um botão por seguradora: nome, preço e um ponto quando há pendência (vermelho para divergência, amarelo para ausente). */
+function montarTrilho() {
+  const t = $("#atalhos"); if (!t) return;
+  const d = E.dados;
+  const botoes = d.seguradoras.map((s) => {
+    const ps = pend.filter((p) => p.onde === s.id);
+    const nivel = ps.some((p) => p.tipo === "divergente") ? "divergente" : ps.length ? "ausente" : "";
+    const p = preco(s), rec = s.id === d.recomendada;
+    const resumo = [s.nome, isNaN(p) ? "sem preço" : brl(p), rec ? "recomendada" : "", !s.incluir ? "fora do documento" : "",
+      nivel ? `${ps.length} ${ps.length > 1 ? "pendências" : "pendência"}` : ""].filter(Boolean).join(", ");
+    return el("button", { type: "button", class: "ir" + (s.incluir ? "" : " fora"), "data-seg": s.id, "aria-label": `Ir para ${resumo}`, title: resumo, onclick: () => irPara(s.id) },
+      el("span", { class: "nome" }, nivel ? el("span", { class: "ponto " + nivel, "aria-hidden": "true" }) : null, rec ? el("span", { class: "marca-rec", "aria-hidden": "true" }, "✓") : null, s.nome),
+      el("span", { class: "valor num" }, isNaN(p) ? "sem preço" : brl(p)));
+  });
+  repor(t,
+    el("button", { type: "button", class: "seta", "aria-label": "Seguradora anterior", onclick: () => passo(-1) }, "‹"),
+    el("div", { class: "lista" }, botoes),
+    el("button", { type: "button", class: "seta", "aria-label": "Próxima seguradora", onclick: () => passo(1) }, "›"));
+  marcarAtiva();
 }
 
 /** Recalcula pendências e atualiza só as marcações, sem redesenhar os campos (mantém o foco). */
@@ -536,8 +590,9 @@ function atualizar() {
       el("div", { class: "trilho" }, el("div", { class: "barra-p", style: `width:${isNaN(p) ? 0 : Math.max(4, p / max * 100)}%` })),
       el("span", { class: "selo" }, [rec ? "Recomendada" : "", p === menor ? "Menor preço" : "", melhorParcelamento(opcaoAtual(s))].filter(Boolean).join(" · ")));
   }) : [el("p", { class: "mut" }, "Nenhuma seguradora no documento.")]));
+  montarTrilho();
   const aus = pend.filter((p) => p.tipo === "ausente").length, div = pend.filter((p) => p.tipo === "divergente").length;
-  repor($("#contagem"), 
+  repor($("#contagem"),
     div ? el("span", { class: "chip divergente" }, `${div} ${div > 1 ? "divergências" : "divergência"}`) : null,
     aus ? el("span", { class: "chip ausente" }, `${aus} ${aus > 1 ? "ausentes" : "ausente"}`) : null,
     !pend.length ? el("span", { class: "chip ok" }, "Tudo conferido") : null);
