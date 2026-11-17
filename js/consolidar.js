@@ -75,12 +75,28 @@ export function recalcularComum(dados, refazer = false) {
     if (k === "validade_cotacao") continue;
     c[k] = dados.fontes.map((f) => f.valores[k]).find((v) => v) || (refazer ? "" : c[k] || "");
   }
+  // CEP: Yelum e Aliro trazem só os 5 primeiros dígitos; se outro PDF traz o CEP completo que começa igual, usa o completo.
+  const digCep = soDigitos(c.cep);
+  if (digCep.length < 8) {
+    const completo = dados.fontes.map((f) => f.valores.cep).find((v) => soDigitos(v).length === 8 && (!digCep || soDigitos(v).startsWith(digCep)));
+    if (completo) c.cep = completo;
+  }
   if (refazer || !c.validade_cotacao) {
     const validas = dados.fontes.map((f) => ({ d: parseDate(f.valores.validade_cotacao), calc: f.valores._validade_calculada })).filter((v) => v.d);
     validas.sort((a, b) => a.d - b.d);
     c.validade_cotacao = validas[0] ? fmtDate(validas[0].d) : "";
     dados.validade_calculada = !!validas[0]?.calc;
   }
+}
+
+const soDigitos = (v) => String(v || "").replace(/\D/g, "");
+
+/** Chave de comparação: ignora acento, caixa, espaços e pontuação; CEP só pelos dígitos; bônus pelo número ("03" = "3"). */
+function chaveComparacao(k, v) {
+  if (k === "valor_referencia") return String(parseBRL(v));
+  if (k === "cep") return soDigitos(v);
+  if (k === "bonus" && /^\s*\d+\s*$/.test(v)) return String(parseInt(v, 10));
+  return norm(v);
 }
 
 /** Para cada campo de consistência, os valores diferentes encontrados e de qual PDF vieram. */
@@ -91,9 +107,15 @@ export function divergencias(dados) {
     const vistos = new Map();
     for (const f of dados.fontes) {
       const v = f.valores[k]; if (!v) continue;
-      const chave = k === "valor_referencia" ? String(parseBRL(v)) : norm(v);
+      const chave = chaveComparacao(k, v);
       if (!vistos.has(chave)) vistos.set(chave, { valor: v, origens: [] });
       vistos.get(chave).origens.push(f.nomes.join(", ") || f.arquivo_nome);
+    }
+    // CEP incompleto (5 dígitos, Yelum/Aliro) não é divergência se houver um único CEP completo que começa com ele.
+    if (k === "cep") for (const [ch, g] of [...vistos]) {
+      if (ch.length >= 8) continue;
+      const alvos = [...vistos.keys()].filter((o) => o.length === 8 && o.startsWith(ch));
+      if (alvos.length === 1) { vistos.get(alvos[0]).origens.push(...g.origens); vistos.delete(ch); }
     }
     if (vistos.size > 1) out[k] = [...vistos.values()];
   }

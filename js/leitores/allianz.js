@@ -38,7 +38,7 @@ export const allianz = {
       const porCel = (l) => { const r = b.nomes.map(() => []); for (const c of l?.celulas || []) { const cx = (c.x + c.x2) / 2; if (c.x > b.centros[0] - 80) r[maisProximo(cx, b.centros)].push(c.s); } return r; };
       const casco = porCol(linha(/^Casco/, 1)), dm = porCol(linha(/Danos Materiais/)), dc = porCol(linha(/Danos Corporais/)), mo = porCol(linha(/Danos Morais/));
       const app = porCol(linha(/^APP\W+Morte/)), def = porCol(linha(/Gastos com Defesa/));
-      const vid = porCol(linha(/^Vidros, lanternas/, 1)), cr = porCel(linha(/^Tipo de Carro Reserva/)), gu = porCel(linha(/^Guincho/));
+      const vid = porCol(linha(/^Vidros, lanternas/, 1)), cr = porCel(linha(/^Tipo de Carro Reserva/)), crDias = porCel(linha(/^Carro Reserva\s/)), gu = porCel(linha(/^Guincho/));
       const as = porCol(linha(/^Assistência 24/)), tot = porCol(linha(/^Preço Total/));
       const lim = (toks) => (toks?.[0] && /,\d{2}$/.test(toks[0]) ? R(toks[0]) : "");
       const nao = (t) => !t || /Não Contratado|^-$/i.test(t);
@@ -55,7 +55,7 @@ export const allianz = {
           danos_materiais: lim(dm[k]) || "NÃO CONTRATADO", danos_corporais: lim(dc[k]) || "NÃO CONTRATADO", danos_morais: lim(mo[k]) || "NÃO CONTRATADO",
           app: lim(app[k]) ? `${lim(app[k])} POR PASSAGEIRO` : "NÃO CONTRATADO",
           guincho: nao(as[k]?.[0]) && nao(g) ? "NÃO CONTRATADO" : /LIVRE/i.test(g || "") ? "SEM LIMITE DE KM" : guincho(g) || up(as[k]?.[0]),
-          carro_reserva: nao(cr[k]?.[0]) ? "NÃO" : carroReserva(`${cr[k][0]} ${crTexto}`) || up(cr[k][0]),
+          carro_reserva: nao(cr[k]?.[0]) ? "NÃO" : carroReserva(`${crDias[k]?.find((s) => /\d+\s*(Dias|Diárias)/i.test(s)) || ""} ${cr[k][0]}`) || carroReserva(`${cr[k][0]} ${crTexto}`) || up(cr[k][0]),
           vidros: nao(vid[k]?.[0]) ? "NÃO CONTRATADO" : rotuloVidros("VIDROS LANTERNAS FARÓIS RETROVISORES"),
           logo_marca: servico(doc.texto, /LOGOMARCA|LOGO MARCA/i),
           pequenos_reparos: servico(doc.texto, /MARTELINHO|PARA-?CHOQUE|REPARO RAPIDO/i),

@@ -74,7 +74,10 @@ export const portoAtual = {
     const vidros = iVid >= 0 ? [doc.linhas[iVid + 2]?.texto, doc.linhas[iVid + 3]?.texto, doc.linhas[iVid + 4]?.texto].join(" ") : "";
     const iAss = achar(doc, /^Assistências$/);
     const assist = iAss >= 0 ? doc.linhas[iAss + 2]?.texto || "" : "";
-    const carro = linhaDe(/Carro Reserva/i);
+    // "Carro Reserva porte médio ou automático - Completo 15" nesta linha e "dias - Referenciada" na seguinte.
+    const iCarro = achar(doc, /Carro Reserva/i);
+    const carro = iCarro < 0 ? "" : carroReserva(doc.linhas[iCarro].texto) ? doc.linhas[iCarro].texto
+      : `${cel(doc.linhas[iCarro], 0)} ${/^dias\b/i.test(doc.linhas[iCarro + 1]?.texto || "") ? cel(doc.linhas[iCarro + 1], 0) : ""}`;
     const premio = R(linhaDe(/^Valor total\s/));
     const morais = linhaDe(/Danos Morais/i), app = linhaDe(/Acidentes Pessoais|^APP/i);
     const defesa = linhaDe(/Custos de defesa/i);

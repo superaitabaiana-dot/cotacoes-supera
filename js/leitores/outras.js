@@ -1,5 +1,5 @@
 // Bradesco, Mapfre, Tokio Marine, Zurich e Suhai: um layout próprio cada.
-import { R, achar, anoModelo, carroReserva, cel, cep, colunaMaisProxima, data, datas, depois, estadoCivil, extracao, franquia, guincho, maisProximo, opcao, pct, placa, resumirPagamentos, rotuloVidros, rx, sem, servico, simNao, tipoSeguro, tokensComX, up, usoVeiculo, valores } from "./base.js";
+import { R, abaixo, achar, anoModelo, carroReserva, cel, cep, colunaMaisProxima, data, datas, depois, estadoCivil, extracao, franquia, guincho, maisProximo, opcao, pct, placa, resumirPagamentos, rotuloVidros, rx, sem, servico, simNao, tipoSeguro, tokensComX, up, usoVeiculo, valores } from "./base.js";
 
 const linhaDe = (doc, re) => doc.linhas.find((l) => re.test(l.texto))?.texto || "";
 /** Limite da cobertura; vazio quando a linha diz "não contratada" (o R$ 0,00 ao lado é o prêmio). */
@@ -184,7 +184,9 @@ export const tokio = {
     const vig = datas(rx(doc, /Vigência:\s*([^|\n]+)/));
     const segurado = cel(cab, 0);
     return extracao({
-      segurado, condutor: /Próprio Segurado/i.test(cab?.texto || "") ? segurado : cel(cab, 2),
+      // "Não é o Próprio Segurado": o nome vem no quadro "Nome Principal condutor".
+      segurado, condutor: /Próprio Segurado/i.test(cab?.texto || "") && !/N[ãa]o\s+é/i.test(cab?.texto || "") ? segurado
+        : up(abaixo(doc, /^Nome Principal condutor/i, /^Nome Principal condutor/i)) || (/Segurado/i.test(cel(cab, 2)) ? "" : cel(cab, 2)),
       estado_civil: estadoCivil(estado),
       cep: cep(doc.texto.slice(doc.texto.indexOf("CEP de pernoite"))), uso: usoVeiculo(cel(depois(doc, /^Tipo de utilização/), 0)),
       tipo: tipoSeguro(cel(tipo, 0)), bonus: cel(ap, 2), vencimento_anterior: data(cel(ap, 1)),
@@ -319,11 +321,15 @@ export const suhai = {
     const iEC = achar(doc, /^Nome Social\s+Sexo\s+Nascimento\s+Estado Civil/);
     let ec = cel(doc.linhas[iEC + 1], 3);
     for (let j = iEC + 2; j < iEC + 5 && doc.linhas[j]?.celulas.length === 1 && !/^Telefone/.test(doc.linhas[j].texto); j++) ec += doc.linhas[j].texto;
+    // Condutor (formato atual): "CPF Condutor Nome Condutor   Gênero   Est. Civil   Nascimento" e os valores na linha de baixo.
+    const COND = /Nome Condutor\s+Gênero/;
+    const lCond = depois(doc, COND);
+    const condutor = up(lCond?.celulas.map((c) => c.s.replace(/^[\d.\-\s]+/, "").trim()).find((s) => /^[A-Za-zÀ-ú]{2,}\s+[A-Za-zÀ-ú]/.test(s)) || "");
     const uso = depois(doc, /^Utilização\s+Reg\. Tarif/);
     const vig = doc.texto.match(/das 24h de (\S+) às 24h de (\S+)/);
     const dias = rx(doc, /Validade desta cotação:\s*(\d+)\s*dias/);
     return extracao({
-      segurado: cel(prop, 0), estado_civil: estadoCivil(ec),
+      segurado: cel(prop, 0), condutor, estado_civil: estadoCivil((condutor && abaixo(doc, COND, /^Est\. Civil/)) || ec),
       cep: cep(cel(uso, 1).split("/").pop()), uso: usoVeiculo(cel(uso, 0)), bonus: cel(uso, 3),
       tipo: tipoSeguro(cel(depois(doc, /^Tipo de Seguro\s+Ramo/), 0)),
       veiculo: up(depois(doc, /^Marca\s+Modelo do Veículo/, 2)?.texto.replace(/\s{3,}/g, " ")),

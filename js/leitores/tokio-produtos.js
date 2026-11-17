@@ -18,7 +18,10 @@ export const tokioProdutos = {
   id: "tokio-produtos", nome: "Tokio Marine (produtos)",
   detecta: (doc) => /Cotação Tokio Marine/i.test(doc.texto) && (/Escolha o produto ideal/i.test(doc.texto) || /Auto Clássico[\s\S]*Auto Roubo/.test(doc.texto)),
   ler(doc) {
-    const iCob = achar(doc, /^COBERTURAS/i);
+    // Início do quadro de coberturas: título "COBERTURAS" ou, sem ele, a linha "Cobertura (LMI)" logo abaixo dos produtos.
+    // Não usar o cabeçalho da página 1 (resumo dos produtos), que tem outras posições de coluna.
+    let iCob = achar(doc, /^COBERTURAS/i);
+    if (iCob < 0) { const iLmi = achar(doc, /Cobertura \(LMI\)/i); if (iLmi >= 0) iCob = Math.max(0, iLmi - 4); }
     const cab = cabecalho(doc, iCob);
     if (!cab) throw new Error("Tokio (produtos): cabeçalho dos produtos não encontrado");
     const nomesBase = cab.nomes.map((n) => n.replace(/^AUTO PROTEÇÃO$/, "AUTO PROTEÇÃO MENSAL"));
@@ -37,11 +40,20 @@ export const tokioProdutos = {
 
     // Quadros da página seguinte, com o mesmo cabeçalho de produtos.
     const linhaProd = (re) => { const i = achar(doc, re, iCob); if (i < 0) return null; const c = cabecalho(doc, i - 6); return { linha: doc.linhas[i], centros: c && c.i < i ? c.centros : cab.centros }; };
-    const celulas = (re) => { const x = linhaProd(re); if (!x) return cab.centros.map(() => ""); const r = x.centros.map(() => []);
-      for (const c of x.linha.celulas) { const cx = (c.x + c.x2) / 2; if (c.x > x.centros[0] - 120 && !/^\|$/.test(c.s)) r[maisProximo(cx, x.centros)].push(c.s); }
+    // Com `multi`, junta as linhas vizinhas sem rótulo: um valor longo quebra em 2 ou 3 linhas centradas na do rótulo
+    // ("15 diárias Intermediário" acima e "(Mecânico)" abaixo da linha "Carro reserva").
+    const celulas = (re, multi = false) => { const x = linhaProd(re); if (!x) return cab.centros.map(() => ""); const r = x.centros.map(() => []);
+      const ls = [x.linha];
+      if (multi) {
+        const i = doc.linhas.indexOf(x.linha);
+        const solta = (l) => l?.celulas.length && l.celulas.every((c) => c.x > x.centros[0] - 120) && !/Auto\s+Auto/i.test(l.texto);
+        for (let j = i - 1; j >= i - 2 && solta(doc.linhas[j]); j--) ls.unshift(doc.linhas[j]);
+        for (let j = i + 1; j <= i + 2 && solta(doc.linhas[j]); j++) ls.push(doc.linhas[j]);
+      }
+      for (const l of ls) for (const c of l.celulas) { const cx = (c.x + c.x2) / 2; if (c.x > x.centros[0] - 120 && !/^\|$/.test(c.s)) r[maisProximo(cx, x.centros)].push(c.s); }
       return r.map((v) => v.join(" ")); };
     const frq = celulas(/^Indenização Parcial do Veículo/i);
-    const vid = celulas(/^Vidros\s/i), logo = celulas(/^Logomarca/i), mart = celulas(/^Martelinho/i), roda = celulas(/^Roda, pneu/i), cr = celulas(/^Carro reserva\s/i);
+    const vid = celulas(/^Vidros\s/i), logo = celulas(/^Logomarca/i), mart = celulas(/^Martelinho/i), roda = celulas(/^Roda, pneu/i), cr = celulas(/^Carro reserva(?!\s+quando)\s/i, true); // não a linha "Carro reserva quando o segurado for terceiro…"
     const iRb = achar(doc, /\(adicional\)\s*=/i, iCob);
     const reboque = iRb >= 0 ? porCol(doc.linhas[iRb], linhaProd(/^Km adicional reboque/i)?.centros || cab.centros) : cab.centros.map(() => []);
     const tem = (s) => (!s ? null : !/Não possui|Não contratad/i.test(s));
@@ -92,20 +104,28 @@ export const tokioProdutos = {
     const PROP = /^Proponente\s+CPF/i, OPC = { linhas: 4, ate: /^(Nome Social|Deseja|Tipo Seguro)/i };
     const segurado = up(abaixo(doc, PROP, /^Proponente$/i, OPC));
     const principal = abaixo(doc, PROP, /^Principal Condutor/i, OPC);
+    // "Próprio Segurado" ou "Não é o Próprio Segurado"; no segundo caso o nome vem no quadro "Nome Principal condutor".
+    const proprio = /Próprio Segurado/i.test(principal) && !/N[ãa]o\s+é/i.test(principal);
+    const COND = /^Nome Principal condutor/i;
+    const condutor = proprio ? segurado : up(abaixo(doc, COND, COND)) || (/Segurado/i.test(principal) ? "" : up(principal));
     const iVei = achar(doc, /^Tipo Seguro\s+Vigência/i); const vei = iVei >= 0 ? doc.linhas[iVei + 1] : null;
     const iFab = achar(doc, /^Fabricante\s+Veículo/i);
     const iRen = achar(doc, /^Nome da Congênere/i); const ren = iRen >= 0 ? doc.linhas[iRen + 1] : null;
+    // Renovação da própria Tokio: quadro "Número da apólice | Fim de vigência | Classe de Bônus".
+    const AP = /^Número da apólice\s+Fim de vigência/i;
+    const renTokio = /Renovação Tokio/i.test(vei?.texto || "");
     const iUso = achar(doc, /^Tipo de utilização/i);
     const iMenor = achar(doc, /faixa etária de 18 a 25 anos/i);
     const vig = datas(rx(doc, /Vigência:\s*([^|\n]+)/));
     return extracao({
-      segurado, condutor: /Próprio Segurado/i.test(principal) ? segurado : up(principal),
-      estado_civil: estadoCivil(abaixo(doc, PROP, /^Estado Civil/i, OPC)),
+      segurado, condutor,
+      estado_civil: estadoCivil((!proprio && abaixo(doc, COND, /^Estado Civil/i)) || abaixo(doc, PROP, /^Estado Civil/i, OPC)),
       cep: cep(doc.texto.slice(doc.texto.search(/CEP de pernoite/i))),
       uso: usoVeiculo(iUso >= 0 ? doc.linhas[iUso + 1]?.celulas[0]?.s : ""),
       tipo: tipoSeguro(vei?.celulas[0]?.s),
-      seguradora_anterior: up(ren?.celulas[0]?.s.replace(/^\d+\s*-\s*/, "")), vencimento_anterior: data(ren?.texto.match(/\d{2}\/\d{2}\/\d{4}/)?.[0]),
-      bonus: String(parseInt(ren?.celulas.at(-1)?.s, 10) || ""),
+      seguradora_anterior: up(ren?.celulas[0]?.s.replace(/^\d+\s*-\s*/, "")) || (renTokio ? "TOKIO MARINE" : ""),
+      vencimento_anterior: data(ren?.texto.match(/\d{2}\/\d{2}\/\d{4}/)?.[0]) || data(abaixo(doc, AP, /^Fim de vigência/i)),
+      bonus: String(parseInt(ren?.celulas.at(-1)?.s, 10) || parseInt(abaixo(doc, AP, /^Classe de Bônus/i), 10) || ""),
       veiculo: up(iFab >= 0 ? doc.linhas[iFab + 1]?.texto.replace(/\s{3,}/g, " ") : ""), placa: placa(vei?.texto), ano_modelo: rx({ texto: vei?.celulas.at(-1)?.s || "" }, /^(\d{4})$/),
       vigencia_inicio: vig[0] || "", vigencia_fim: vig[1] || "",
       data_cotacao: data(rx(doc, /Data impressão:\s*(\S+)/)), validade_cotacao: data(rx(doc, /Validade cotação:\s*(\S+)/)),

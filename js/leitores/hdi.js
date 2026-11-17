@@ -37,7 +37,12 @@ export const hdi = {
     const totais = valores(linha(/^TOTAL À VISTA/));
     const vid = [linha(/AUTO VIDROS/i), linha(/FARÓIS, LANTERNAS|RETROV/i)].join(" ");
     const lmiVidros = /VIDRO/i.test(vid) ? rotuloVidros(vid) : "NÃO CONTRATADO";
-    const assist = linha(/VIP AUTO|ASSIST/i).replace(/\(\*\d\).*/, ""); // a nota de rodapé fala do 2º guincho
+    // Assistência: a linha da tabela que cita a nota "(*N)Assistencia 24h..." (ex.: "ESPECIAL AUTO - 600KM(*4)").
+    const nota = doc.linhas.find((l) => /^\(\*\d+\)\s*Assist/i.test(l.texto));
+    const nNota = nota?.texto.match(/^\(\*(\d+)\)/)[1];
+    const lAssist = nNota ? doc.linhas.find((l) => !/^\(\*/.test(l.texto) && l.texto.includes(`(*${nNota})`)) : null;
+    const assist = lAssist ? lAssist.celulas[0].s.replace(/\(\*\d+\).*/, "")
+      : linha(/VIP AUTO|ASSIST/i).replace(/\(\*\d\).*/, ""); // a nota de rodapé fala do 2º guincho
     const cr = linha(/DIAS CR|CARRO RESERVA/i);
     const pagos = pagamentosHdi(doc, nOp);
     const opcoes = [];
@@ -52,7 +57,7 @@ export const hdi = {
         danos_corporais: R(lmis(/^RCF-V DANOS CORPORAIS/)[k]) || "NÃO CONTRATADO",
         danos_morais: R(morais) && morais !== "0,00" ? R(morais) : "NÃO CONTRATADO",
         app: R(app) && app !== "0,00" ? `${R(app)} POR PASSAGEIRO` : "NÃO CONTRATADO",
-        guincho: guincho(assist) || "NÃO CONTRATADO",
+        guincho: guincho(assist) || guincho(nota?.texto.match(/Guincho[^,.]*/i)?.[0]) || (lAssist ? up(assist) : "NÃO CONTRATADO"),
         carro_reserva: carroReserva(cr) || "NÃO",
         vidros: lmiVidros,
         logo_marca: servico(doc.texto, /LOGOMARCA|LOGO MARCA/i),

@@ -65,11 +65,11 @@ export function guincho(s) {
   if (/SEM LIMITE|ILIMITAD/.test(t) && !/\d+\s*KM/.test(t)) return "SEM LIMITE DE KM";
   const m = t.match(/(\d+)\s*KM/); return m ? `${m[1]} KM` : "";
 }
-/** "CARRO RESERVA PORTE BÁSICO - 7 DIAS" → "7 DIAS BÁSICO" */
+/** "CARRO RESERVA PORTE BÁSICO - 7 DIAS" → "7 DIAS BÁSICO"; sem porte, "AUTOMÁTICO" se o PDF disser. */
 export function carroReserva(s) {
   const t = up(s); const m = sem(t).match(/(\d+)\s*(DIAS|DIARIAS)/); if (!m) return "";
-  const porte = sem(t).match(/BASICO|INTERMEDIARIO|EXECUTIVO|SUPERIOR|ESPECIAL|PREMIUM/);
-  const nome = porte ? { BASICO: "BÁSICO", INTERMEDIARIO: "INTERMEDIÁRIO" }[porte[0]] || porte[0] : "";
+  const porte = sem(t).match(/BASICO|INTERMEDIARIO|MEDIO|EXECUTIVO|SUPERIOR|ESPECIAL|PREMIUM/) || sem(t).match(/AUTOMATICO/);
+  const nome = porte ? { BASICO: "BÁSICO", INTERMEDIARIO: "INTERMEDIÁRIO", MEDIO: "MÉDIO", AUTOMATICO: "AUTOMÁTICO" }[porte[0]] || porte[0] : "";
   return `${m[1]} DIAS${nome ? " " + nome : ""}`;
 }
 /** Franquia no formato da v5: "R$ 2.874,00 (25% DA OBRIGATÓRIA)", até 32 caracteres. */
