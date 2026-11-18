@@ -92,7 +92,8 @@ export const allianz = {
       seguradora_anterior: up(rx(doc, /Seguradora Anterior:\s*\d+\s*-\s*(.+)/)),
       bonus: String(parseInt(rx(doc, /Classe Bônus:\s*(\d+)/), 10) || ""),
       vencimento_anterior: data(rx(doc, /Fim da vigência anterior:\s*(\S+)/)),
-      veiculo: up(rx(doc, /Veículo:\s*(.+?)\s{2,}Versão/)), placa: placa(rx(doc, /Placa:\s*(\S+)/)), ano_modelo: rx(doc, /Ano\/Modelo:\s*(\S+)/),
+      // Nome longo do modelo deixa "Versão:" colado, com um espaço só ("… Flex Aut. Versão: 000162/161.20").
+      veiculo: up(rx(doc, /Veículo:\s*(.+?)\s+Versão:/)), placa: placa(rx(doc, /Placa:\s*(\S+)/)), ano_modelo: rx(doc, /Ano\/Modelo:\s*(\S+)/),
       vigencia_inicio: data(vig?.[1]), vigencia_fim: data(vig?.[2]),
       data_cotacao: rod ? `${rod[1]}/${rod[2]}/${rod[3]}` : dataExtenso(rx(doc, /,\s*(\d{1,2} de \S+ de \d{4})/)),
       validade_cotacao: data(rx(doc, /condições desta cotação até\s*(\S+)/)),
