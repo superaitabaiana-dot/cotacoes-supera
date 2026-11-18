@@ -109,7 +109,7 @@ export function criarApiDemo() {
         cot: { ...c, consultor_nome: dono?.nome },
         versoes: db.versoes.filter((v) => v.cotacao_id === id).sort((a, b) => b.numero - a.numero),
         fontes: db.fontes.filter((f) => f.cotacao_id === id),
-        dono: dono ? { nome: dono.nome, telefone: dono.telefone } : null,
+        dono: dono ? { nome: dono.nome, telefone: dono.telefone, email: dono.email } : null,
       };
     },
     async driveStatus() { return true; },

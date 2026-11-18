@@ -7,8 +7,8 @@ const ROTULO = Object.fromEntries(CAMPOS_COMUNS);
 const OBRIGATORIOS = ["segurado", "veiculo", "vigencia_inicio", "vigencia_fim", "data_cotacao", "validade_cotacao"];
 const DESEJAVEIS = ["condutor", "estado_civil", "cep", "uso", "placa", "cobertura_menor_25"];
 const DATAS = ["vigencia_inicio", "vigencia_fim", "vencimento_anterior", "data_cotacao", "validade_cotacao"];
-const OBRIG_SEG = [["fipe", "FIPE"], ["franquia", "Franquia"], ["danos_materiais", "Danos materiais"], ["danos_corporais", "Danos corporais"], ["premio_total", "Preço total"]];
-const DESEJ_SEG = [["danos_morais", "Danos morais"], ["app", "APP"], ["guincho", "Assistência"], ["carro_reserva", "Carro reserva"], ["vidros", "Vidros"]];
+const OBRIG_SEG = [["fipe", "FIPE"], ["franquia", "Franquia"], ["danos_materiais", "Danos materiais a terceiros"], ["danos_corporais", "Danos corporais a terceiros"], ["premio_total", "Preço total"]];
+const DESEJ_SEG = [["danos_morais", "Danos morais a terceiros"], ["app", "APP"], ["guincho", "Assistência"], ["carro_reserva", "Carro reserva"], ["vidros", "Vidros"]];
 const MONETARIOS = ["franquia", "danos_materiais", "danos_corporais", "danos_morais", "app", "premio_total"];
 const MARCADOR = /\[(CPF|CNPJ|EMAIL|TELEFONE|DATA DE NASCIMENTO)\]/;
 

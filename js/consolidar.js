@@ -15,8 +15,8 @@ export const CAMPOS_CONSISTENCIA = ["segurado", "condutor", "cep", "placa", "uso
 
 /** Coberturas comparadas entre seguradoras, na ordem do documento. */
 export const COBERTURAS = [
-  ["franquia", "Franquia"], ["fipe", "FIPE"], ["danos_materiais", "Danos materiais"], ["danos_corporais", "Danos corporais"],
-  ["danos_morais", "Danos morais"], ["app", "Acidentes pessoais (APP)"], ["vidros", "Vidros"], ["carro_reserva", "Carro reserva"],
+  ["franquia", "Franquia"], ["fipe", "FIPE"], ["danos_materiais", "Danos materiais a terceiros"], ["danos_corporais", "Danos corporais a terceiros"],
+  ["danos_morais", "Danos morais a terceiros"], ["app", "Acidentes pessoais (APP)"], ["vidros", "Vidros"], ["carro_reserva", "Carro reserva"],
   ["guincho", "Assistência e guincho"], ["outras_coberturas", "Outras coberturas"],
 ];
 export const SERVICOS = [["logo_marca", "Logomarca"], ["pequenos_reparos", "Pequenos reparos"], ["roda_pneu", "Roda e pneu"]];

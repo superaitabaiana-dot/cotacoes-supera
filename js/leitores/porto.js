@@ -3,6 +3,7 @@ import { R, achar, anoModelo, carroReserva, cel, cep, colunaMaisProxima, data, d
 
 function marca(texto) {
   const t = up(sem(texto));
+  if (/MITSUI/.test(t)) return "Mitsui Sumitomo"; // "Mitsui Sumitomo Seguros", operado pela Porto
   if (/ITAU/.test(t)) return "Itaú";
   if (/AZUL/.test(t)) return "Azul";
   return "Porto Seguro";

@@ -73,7 +73,7 @@ function apiSupabase(sb) {
       ]);
       const cot = ok(rc, "Cotação não encontrada."), versoes = ok(rv), ultima = ok(ru), fontes = ok(rf);
       if (versoes[0] && ultima) versoes[0].dados = ultima.dados;
-      const dono = ok(await sb.from("perfis").select("nome,telefone").eq("id", cot.consultor_id).maybeSingle());
+      const dono = ok(await sb.from("perfis").select("nome,telefone,email").eq("id", cot.consultor_id).maybeSingle());
       return { cot, versoes, fontes, dono };
     },
     async versoes(id) {

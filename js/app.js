@@ -399,8 +399,8 @@ function etapaConferencia() {
         painelCliente(d),
         painelMesa(d),
         el("section", { class: "painel" },
-          el("div", { class: "painel-cab" }, el("h2", {}, "Recomendação"), el("span", { class: "mut", style: "font-size:13px" }, "Marque “Recomendar” na seguradora escolhida.")),
-          el("div", { class: "campo" }, el("label", { for: "nota" }, "Por que recomendamos (aparece no documento)"),
+          el("div", { class: "painel-cab" }, el("h2", {}, "Recomendação"), el("span", { class: "mut", style: "font-size:13px" }, "Registro interno: não aparece no documento do cliente.")),
+          el("div", { class: "campo" }, el("label", { for: "nota" }, "Por que recomendamos (só no sistema)"),
             el("textarea", { id: "nota", rows: 3, maxlength: 400, "data-bind": "nota", placeholder: "Ex.: melhor equilíbrio entre preço e coberturas, com carro reserva de 15 dias e assistência sem limite de km." }, d.nota || ""))),
         avisos.length ? el("section", { class: "painel" }, el("h2", {}, "Atenção na comparação"), el("ul", { class: "avisos" }, ...avisos.map((a) => el("li", {}, a)))) : null,
         textosEnviados()),
@@ -615,7 +615,7 @@ function focar(p) {
 // ---------- Etapa 3: documento ----------
 function rodapeCtx(identificacao, cot = E) {
   const quem = cot.dono?.nome ? cot.dono : eu;
-  return { consultor: [quem.nome, fmtTel(quem.telefone)].filter(Boolean).join(" · "), whatsapp: cfg.whatsapp_supera || "", identificacao, base: "assets/" };
+  return { consultor: [quem.nome, fmtTel(quem.telefone)].filter(Boolean).join(" · "), email: quem.email || "", whatsapp: cfg.whatsapp_supera || "", identificacao, base: "assets/" };
 }
 
 async function desenharPaginas(blob, alvo, info) {
@@ -669,7 +669,7 @@ async function etapaDocumento() {
       el("aside", { class: "lateral" },
         el("section", { class: "painel", style: "display:flex;flex-direction:column;gap:14px" },
           el("h2", {}, "Documento"),
-          el("p", { class: "mut" }, qtd > 1 ? `Comparativo de ${qtd} seguradoras, seguido de uma página no padrão Supera para cada uma.` : "Uma página no padrão Supera."),
+          el("p", { class: "mut" }, qtd > 1 ? `Comparativo de ${qtd} seguradoras no padrão Supera: dados do cliente e do condutor, coberturas básicas com a logomarca de cada seguradora e formas de pagamento.` : "Cotação no padrão Supera: dados do cliente e do condutor, coberturas básicas e formas de pagamento."),
           el("p", { class: "mut", style: "font-size:13px" }, "Ao salvar, o sistema registra uma nova versão, baixa o PDF com as páginas marcadas e guarda uma cópia no Drive da Supera junto com os PDFs originais."),
           lugarSeletor,
           el("div", { class: "linha" }, salvar, el("button", { class: "discreto", onclick: () => { E.etapa = 2; desenharEtapa(); } }, "Voltar à conferência")),
