@@ -91,7 +91,7 @@ export function naoContratado(s) { return /^(NÃO|NAO)(\s+CONTRATAD[OA])?$/i.tes
 export const LINHAS_DOC = [
   ["premio_total", "Valor do seguro"],
   ["franquia", "Valor da franquia"],
-  ["fipe", "Percentual Fipe/Valor determinado"],
+  ["fipe", "Percentual Fipe/Valor de Mercado"],
   ["danos_materiais", "Danos Materiais a Terceiros"],
   ["danos_corporais", "Danos Corporais a Terceiros"],
   ["danos_morais", "Danos Morais a Terceiros"],
