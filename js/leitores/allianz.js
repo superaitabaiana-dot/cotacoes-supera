@@ -6,13 +6,19 @@ import { R, achar, carroReserva, cep, data, dataExtenso, estadoCivil, extracao, 
 const TOK = /Não Contratado|Km Livre|\d+% FIPE|Plano \d+|[\d.]+,\d{2}|(?<=\s|^)-(?=\s|$)/gi;
 const nomeOferta = (s) => String(s || "").replace(/\s*\*+\s*$/, "").trim();
 
-/** Blocos de ofertas: nomes na linha acima de "Coberturas  Limite", linhas até "Preço Total". */
+/**
+ * Blocos de ofertas: nomes na linha acima de "Coberturas  Limite", linhas até "Preço Total".
+ * Um cabeçalho que aparece antes do "Preço Total" do bloco anterior é a continuação dele na página seguinte
+ * (a tabela quebrou de página e o PDF repetiu o cabeçalho), não uma oferta nova.
+ */
 function blocosDeOfertas(doc) {
   const blocos = [];
+  let fimAnterior = -1;
   doc.linhas.forEach((l, i) => {
-    if (!/^Coberturas\s+Limite/.test(l.texto) || i === 0) return;
+    if (!/^Coberturas\s+Limite/.test(l.texto) || i === 0 || i < fimAnterior) return;
     const cab = doc.linhas[i - 1].celulas;
     let fim = i + 1; while (fim < doc.linhas.length && !/^Preço Total/.test(doc.linhas[fim].texto)) fim++;
+    fimAnterior = fim;
     blocos.push({ nomes: cab.map((c) => c.s), centros: cab.map((c) => (c.x + c.x2) / 2), linhas: doc.linhas.slice(i + 1, fim + 1) });
   });
   return blocos;
@@ -36,14 +42,19 @@ export const allianz = {
       const porCol = (l) => { const r = b.nomes.map(() => []); for (const t of tokensComX(l, TOK)) if (t.cx > b.centros[0] - 80) r[maisProximo(t.cx, b.centros)].push(t.s); return r; };
       // Células inteiras (carro reserva e guincho podem trazer texto livre, como "7 Diárias Básico").
       const porCel = (l) => { const r = b.nomes.map(() => []); for (const c of l?.celulas || []) { const cx = (c.x + c.x2) / 2; if (c.x > b.centros[0] - 80) r[maisProximo(cx, b.centros)].push(c.s); } return r; };
-      const casco = porCol(linha(/^Casco/, 1)), dm = porCol(linha(/Danos Materiais/)), dc = porCol(linha(/Danos Corporais/)), mo = porCol(linha(/Danos Morais/));
+      // Casco: "Casco - Básica Compreensiva -" com os valores na linha de baixo, ou tudo numa linha só, às vezes colada
+      // ao rodapé da página ("19-11-2026 15:34:04 … Casco - Básica Compreensiva - Colisão…   100% FIPE   300,34").
+      const lCasco = linha(/(?:^|\d)Casco\s*-/);
+      const cascoNaLinha = lCasco && tokensComX(lCasco, /\d+% FIPE/gi).some((t) => t.cx > b.centros[0] - 80);
+      const casco = porCol(cascoNaLinha ? lCasco : linha(/(?:^|\d)Casco\s*-/, 1)), dm = porCol(linha(/Danos Materiais/)), dc = porCol(linha(/Danos Corporais/)), mo = porCol(linha(/Danos Morais/));
       const app = porCol(linha(/^APP\W+Morte/)), def = porCol(linha(/Gastos com Defesa/));
       const vid = porCol(linha(/^Vidros, lanternas/, 1)), cr = porCel(linha(/^Tipo de Carro Reserva/)), crDias = porCel(linha(/^Carro Reserva\s/)), gu = porCel(linha(/^Guincho/));
       const as = porCol(linha(/^Assistência 24/)), tot = porCol(linha(/^Preço Total/));
       const lim = (toks) => (toks?.[0] && /,\d{2}$/.test(toks[0]) ? R(toks[0]) : "");
       const nao = (t) => !t || /Não Contratado|^-$/i.test(t);
       // Nome do casco como está no PDF ("Casco - Básica Compreensiva -"). Vai no campo FIPE, como nas outras seguradoras: "100% (descrição)".
-      const tipoCasco = up(linha(/^Casco/)?.texto.replace(/^Casco\s*-\s*/i, "").replace(/\s*-\s*$/, ""));
+      const celCasco = lCasco?.celulas.find((c) => /Casco\s*-/.test(c.s))?.s || "";
+      const tipoCasco = up(celCasco.match(/Casco\s*-\s*(.*?)(?:\s+-\s|\s*-\s*$|$)/)?.[1] || "");
       b.nomes.forEach((nomeBruto, k) => {
         const soRoubo = /\*\s*$/.test(nomeBruto); // nota "*": vale só para roubo, furto ou incêndio total
         const fipe = pct(casco[k]?.find((t) => /FIPE/i.test(t)));
