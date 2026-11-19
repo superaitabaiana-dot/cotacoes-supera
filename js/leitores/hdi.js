@@ -5,7 +5,9 @@ const FORMAS = ["CARTÃO DE CRÉDITO", "DÉBITO EM CONTA", "CARNÊ"];
 
 /** Tabela "Cartão de / Débito Em / Carnê" (uma trinca por opção) com pares "N x valor". */
 function pagamentosHdi(doc, nOpcoes) {
-  const iCab = achar(doc, /^Cartão de\s+Débito Em\s+Carnê/);
+  // Cabeçalho quebrado em duas linhas ("Cartão de   Débito Em   Carnê", formato antigo) ou numa só
+  // ("Cartão de Crédito   Débito Em Conta   Carnê", desde 11/2026).
+  const iCab = achar(doc, /^Cartão de(?: Crédito)?\s+Débito Em(?: Conta)?\s+Carnê/);
   if (iCab < 0) return [];
   const cols = doc.linhas[iCab].celulas;
   const porCol = cols.map(() => []);
