@@ -3,7 +3,7 @@
 import { CAMPOS_COMUNS, divergencias, incluidas, opcaoAtual } from "./consolidar.js";
 import { hoje, moneyDigits, parseBRL, parseDate } from "./util.js";
 
-const ROTULO = Object.fromEntries(CAMPOS_COMUNS);
+const ROTULO = { ...Object.fromEntries(CAMPOS_COMUNS), tipo: "Tipo de seguro", tipo_veiculo: "Tipo de veículo (auto ou moto)" };
 const OBRIGATORIOS = ["segurado", "veiculo", "vigencia_inicio", "vigencia_fim", "data_cotacao", "validade_cotacao"];
 const DESEJAVEIS = ["condutor", "estado_civil", "cep", "uso", "placa", "cobertura_menor_25"];
 const DATAS = ["vigencia_inicio", "vigencia_fim", "vencimento_anterior", "data_cotacao", "validade_cotacao"];

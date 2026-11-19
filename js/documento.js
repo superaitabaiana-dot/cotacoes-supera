@@ -26,7 +26,7 @@ async function dataUrl(caminho) {
   return new Promise((ok) => { const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.readAsDataURL(b); });
 }
 export async function carregarArte(base = "assets/") {
-  if (!IMG) IMG = { cab: await dataUrl(base + "pdf_cabecalho.jpg"), rod: await dataUrl(base + "pdf_rodape.jpg") };
+  if (!IMG) IMG = { cab: await dataUrl(base + "pdf_cabecalho.jpg"), cabMoto: await dataUrl(base + "pdf_cabecalho_moto.jpg"), rod: await dataUrl(base + "pdf_rodape.jpg") };
   return IMG;
 }
 
@@ -152,7 +152,9 @@ function rodape(pdf, ctx) {
 /** Cabeçalho da Supera + faixa da unidade (como no modelo: unidade, CNPJ, cidade, e-mail do consultor e ID). */
 function moldura(pdf, ctx, nova) {
   if (nova) pdf.addPage();
-  pdf.addImage(IMG.cab, "JPEG", 0, 0, PW, 345 * k, "cab", "FAST");
+  // Cabeçalho "Seguro Auto" ou "Seguro Moto" (mesma arte, só a palavra muda), conforme o veículo lido nos PDFs.
+  const moto = ctx.tipoVeiculo === "MOTO";
+  pdf.addImage(moto ? IMG.cabMoto : IMG.cab, "JPEG", 0, 0, PW, 345 * k, moto ? "cabMoto" : "cab", "FAST");
   pdf.addImage(IMG.rod, "JPEG", 0, 3240 * k, PW, 268 * k, "rod", "FAST");
   rodape(pdf, ctx);
   texto(pdf, EMPRESA.unidade, X0, 420, { px: 34 });
@@ -301,6 +303,7 @@ export async function gerarDocumento(dados, ctx) {
   const { jsPDF } = window.jspdf;
   const pdf = new jsPDF({ unit: "mm", format: "a4", compress: true });
   const segs = ordenadas(dados);
+  ctx = { ...ctx, tipoVeiculo: dados.comum.tipo_veiculo === "MOTO" ? "MOTO" : "AUTO" }; // título "Seguro Moto" ou "Seguro Auto"
   const nomesPorPagina = [new Set()];
   const novaPagina = () => { moldura(pdf, ctx, true); nomesPorPagina.push(new Set()); return TOPO; };
 
@@ -326,7 +329,7 @@ export async function gerarDocumento(dados, ctx) {
   const omitir = ctx.omitir || new Set();
   if (paginas.every((p) => omitir.has(p.chave))) throw new Error("Selecione ao menos uma página para o PDF.");
   for (let i = paginas.length; i >= 1; i--) if (omitir.has(paginas[i - 1].chave)) pdf.deletePage(i); // de trás para a frente: a numeração não muda
-  pdf.setProperties({ title: "Cotação Seguro Auto - Supera", creator: "Supera Seguros e Planejamento" });
+  pdf.setProperties({ title: `Cotação Seguro ${ctx.tipoVeiculo === "MOTO" ? "Moto" : "Auto"} - Supera`, creator: "Supera Seguros e Planejamento" });
   return { blob: pdf.output("blob"), paginas };
 }
 

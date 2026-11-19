@@ -11,7 +11,7 @@ export const CAMPOS_COMUNS = [
 ];
 
 /** Campos que precisam ser iguais em todos os PDFs: se diferirem, a comparação pode estar desigual. */
-export const CAMPOS_CONSISTENCIA = ["segurado", "condutor", "cep", "placa", "uso", "tipo", "bonus", "valor_referencia", "vigencia_inicio", "vigencia_fim"];
+export const CAMPOS_CONSISTENCIA = ["tipo_veiculo", "segurado", "condutor", "cep", "placa", "uso", "tipo", "bonus", "valor_referencia", "vigencia_inicio", "vigencia_fim"];
 
 /** Coberturas comparadas entre seguradoras, na ordem do documento. */
 export const COBERTURAS = [
@@ -40,6 +40,7 @@ export function incorporar(dados, fonte) {
   const valores = {};
   for (const [k] of CAMPOS_COMUNS) valores[k] = x[k] ?? "";
   valores.tipo = x.tipo ?? "";
+  valores.tipo_veiculo = x.tipo_veiculo ?? ""; // AUTO ou MOTO (leitura automática); vazio quando não informado
   if (!valores.validade_cotacao && x.validade_dias && parseDate(x.data_cotacao)) {
     valores.validade_cotacao = fmtDate(addDays(parseDate(x.data_cotacao), Number(x.validade_dias)));
     valores._validade_calculada = true;
@@ -70,7 +71,7 @@ export function removerFonte(dados, fonteId) {
 /** Preenche os campos comuns com o primeiro valor encontrado; a validade é a mais curta entre os PDFs. */
 export function recalcularComum(dados, refazer = false) {
   const c = dados.comum;
-  for (const k of [...CAMPOS_COMUNS.map(([k]) => k), "tipo"]) {
+  for (const k of [...CAMPOS_COMUNS.map(([k]) => k), "tipo", "tipo_veiculo"]) {
     if (!refazer && c[k]) continue;
     if (k === "validade_cotacao") continue;
     c[k] = dados.fontes.map((f) => f.valores[k]).find((v) => v) || (refazer ? "" : c[k] || "");

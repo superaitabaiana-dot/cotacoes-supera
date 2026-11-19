@@ -5,6 +5,7 @@ import { bradesco, mapfre, suhai, tokio, zurich } from "./outras.js";
 import { portoAntigo, portoAtual } from "./porto.js";
 import { tokioProdutos } from "./tokio-produtos.js";
 import { cobertura, faltantes, resgatar, rotulo } from "./resgate.js";
+import { tipoVeiculo } from "./base.js";
 import { yelum } from "./yelum.js";
 
 export const LEITORES = [portoAtual, portoAntigo, hdi, yelum, bradesco, mapfre, tokioProdutos, tokio, zurich, suhai, allianz];
@@ -36,6 +37,7 @@ export function lerPorRegras(doc) {
   if (!leitor) return null;
   let dados;
   try { dados = leitor.ler(doc); } catch (e) { console.error(e); return { leitor, dados: null, parcial: true, faltam: ["erro no leitor"], recuperados: [], cobertura: { ok: 0, total: 1 } }; }
+  if (!dados.tipo_veiculo) dados.tipo_veiculo = tipoVeiculo(doc.texto);
   const renova = renovacao(dados);
   const recuperados = resgatar(doc, dados);
   const faltam = faltantes(dados);

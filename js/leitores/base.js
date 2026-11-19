@@ -36,6 +36,17 @@ export function tipoSeguro(s) {
   if (/NOVO/.test(t)) return "NOVO";
   return "";
 }
+/**
+ * Auto ou moto, pelo texto do PDF da seguradora. Só vira "MOTO" com indicação explícita: um rótulo de produto,
+ * categoria ou tipo de veículo seguido de "Moto" ("Produto: Moto 1212", "Categoria de Risco: Moto - Particular"),
+ * "motocicleta"/"motoneta"/"ciclomotor", ou "seguro para sua moto". Menções soltas ("Moto Coleta", "no caso de moto",
+ * nas condições gerais de seguro de carro) não contam.
+ */
+export function tipoVeiculo(texto) {
+  const t = sem(texto);
+  const rotulo = /\b(?:Produto|Categoria(?: de Risco)?|Tipo(?: de)? Veiculo|Ramo|Modalidade|Tipo de Seguro)\s*:?\s*Moto\b/i;
+  return rotulo.test(t) || /\b(?:MOTOCICLETA|MOTONETA|CICLOMOTOR)\b/i.test(t) || /seguro (?:para|da) sua moto\b/i.test(t) ? "MOTO" : "AUTO";
+}
 export function simNao(s) { const t = up(sem(s)); return /^(S|SIM)\b/.test(t) ? "SIM" : /^(N|NAO)\b/.test(t) ? "NÃO" : ""; }
 export function usoVeiculo(s) {
   const t = up(sem(s)); if (!t) return "";
@@ -147,7 +158,7 @@ export function opcao(o = {}) {
     logo_marca: null, pequenos_reparos: null, roda_pneu: null, outras_coberturas: "", premio_total: "", pagamentos: [], ...o };
 }
 export function extracao(o = {}) {
-  return { tipo_documento: "SEGURADORA", segurado: "", condutor: "", estado_civil: "", cep: "", uso: "", tipo: "", seguradora_anterior: "", bonus: "",
+  return { tipo_documento: "SEGURADORA", tipo_veiculo: "", segurado: "", condutor: "", estado_civil: "", cep: "", uso: "", tipo: "", seguradora_anterior: "", bonus: "",
     vencimento_anterior: "", veiculo: "", placa: "", ano_modelo: "", valor_referencia: "", vigencia_inicio: "", vigencia_fim: "", data_cotacao: "",
     validade_cotacao: "", validade_dias: null, cobertura_menor_25: "", seguradoras: [], alertas: [], ...o };
 }
