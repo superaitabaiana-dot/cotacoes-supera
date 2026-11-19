@@ -101,7 +101,8 @@ export const portoAtual = {
     o.pagamentos = pagamentosPorto(doc, achar(doc, /^Formas de pagamento/i), premio);
 
     return extracao({
-      segurado: cel(depois(doc, /^Segurado\(a\)\s+Nascimento/), 0),
+      // Pessoa física: "Segurado(a)   Nascimento   CPF"; empresa: "Segurado(a)   CNPJ" (sem nascimento).
+      segurado: cel(depois(doc, /^Segurado\(a\)\s+(?:Nascimento|CNPJ|CPF)/), 0),
       condutor: cel(depois(doc, /^Condutor\s+Nascimento/), 0),
       cep: cep(uso?.texto), uso: usoVeiculo(cel(uso, 0)),
       tipo: tipoSeguro(cel(op, 0)), bonus: (op?.texto.match(/Classe\s+(\d+)/i) || [])[1] || "",
