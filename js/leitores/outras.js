@@ -150,6 +150,9 @@ export const tokio = {
     const q = (re) => Object.entries(quadro).find(([k]) => re.test(k))?.[1] || "";
     const sim = (v) => !v ? null : !/NAO POSSUI|NAO CONTRATAD/i.test(up(sem(v)));
     const km = rx(doc, /Km adicional reboque\s+(.+)/i);
+    // "200 km (padrão) + 300 km (adicional) = 500 KM" ou, com o reboque adicional ilimitado contratado,
+    // "200 km (padrão) + Ilimitado (adicional) = Ilimitado".
+    const gIl = km.match(/(\d+)\s*km \(padrão\)\s*\+\s*Ilimitado \(adicional\)\s*=\s*Ilimitado/i);
     const g = km.match(/(\d+)\s*km \(padrão\)\s*\+\s*(\d+)\s*km \(adicional\)\s*=\s*(\d+)\s*KM/i);
     const o = opcao({
       nome: "Valor de mercado referenciado",
@@ -159,7 +162,7 @@ export const tokio = {
       danos_corporais: lmi(l(/Danos Corporais/i)) || "NÃO CONTRATADO",
       danos_morais: lmi(l(/Danos Morais/i)) || "NÃO CONTRATADO",
       app: lmi(l(/APP - Morte/i)) ? `${lmi(l(/APP - Morte/i))} POR PASSAGEIRO` : "NÃO CONTRATADO",
-      guincho: g ? `${g[3]} KM (${g[1]} + ${g[2]} ADICIONAL)` : guincho(km) || (l(/^Assistência 24 horas/) ? up(cel({ celulas: doc.linhas.find((x) => /^Assistência 24 horas/.test(x.texto))?.celulas }, 1)) : "NÃO CONTRATADO"),
+      guincho: gIl ? `SEM LIMITE DE KM (${gIl[1]} KM + ADICIONAL ILIMITADO)` : g ? `${g[3]} KM (${g[1]} + ${g[2]} ADICIONAL)` : guincho(km) || (l(/^Assistência 24 horas/) ? up(cel({ celulas: doc.linhas.find((x) => /^Assistência 24 horas/.test(x.texto))?.celulas }, 1)) : "NÃO CONTRATADO"),
       carro_reserva: carroReserva(q(/CARRO RESERVA/)) || "NÃO",
       vidros: rotuloVidros(q(/^VIDROS/)),
       logo_marca: sim(q(/LOGOMARCA/)), pequenos_reparos: sim(q(/MARTELINHO/)), roda_pneu: sim(q(/RODA/)),
@@ -169,8 +172,13 @@ export const tokio = {
     for (const [re, forma] of [[/^Débito\/Pix/, "DÉBITO/PIX AUTOMÁTICO"], [/^Ficha\s+Parcela/, "FICHA"], [/^Cartão\s+Parcela/, "CARTÃO DE CRÉDITO"]]) {
       const i = achar(doc, re); if (i < 0) continue;
       const itens = [];
+      // A tabela pode continuar na página seguinte: pula rodapé, quebra e cabeçalho da página e segue nas linhas de parcelas.
+      // Só o cabeçalho da própria tabela (re) é pulado; o de outra forma de pagamento encerra esta.
+      const QUEBRA = /^--- Página|Data impressão:|^Cotação Tokio Marine|^Processo SUSEP|^Aceitação sujeita|^Primeira parcela à vista|^Auto$/i;
       for (let j = i + 1; j < doc.linhas.length; j++) {
-        const t = doc.linhas[j].texto; if (!/^\d+\s/.test(t)) break;
+        const t = doc.linhas[j].texto;
+        if (QUEBRA.test(t) || re.test(t)) continue;
+        if (!/^\d+\s/.test(t)) break;
         for (const m of t.matchAll(/(\d+)\s+([\d.]+,\d{2})\s+(Antecipado\*|Sem Juros|[\d,]+)\s+([\d.]+,\d{2})/g))
           if (!/Antecipado/.test(m[3])) itens.push({ n: +m[1], parcela: m[2], total: m[4], juros: m[3] !== "Sem Juros" });
       }
